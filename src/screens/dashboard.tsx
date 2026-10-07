@@ -71,11 +71,43 @@ import {
 
 export function Dashboard() {
   const [query, setQuery] = useState("");
+  const [isCreating, setIsCreating] = useState(() =>
+    window.location.search.includes("newProject=1"),
+  );
   const visible = projects.filter(([name]) =>
     name.toLowerCase().includes(query.toLowerCase()),
   );
+  const startProject = (prompt: string) => {
+    sessionStorage.setItem("buildbox-prompt", prompt);
+    navigate("/workspace/new");
+  };
   return (
-    <ProductShell title="Projects">
+    <ProductShell
+      title={isCreating ? "New project" : "Projects"}
+      onNewProject={() => setIsCreating(true)}
+      newProjectActive={isCreating}
+    >
+      {isCreating ? (
+        <main className="new-project-screen dot-grid">
+          <div className="new-project-content">
+            <Badge>
+              <WandSparkles size={13} /> Now with auto-fix builds <ArrowRight size={13} />
+            </Badge>
+            <h2>
+              Describe it. Build it.
+              <br />
+              <span>Ship it.</span>
+            </h2>
+            <p>
+              Turn a sentence into a production-ready website. BuildBox writes
+              the code, fixes the errors, and gets you live.
+            </p>
+            <div className="new-project-prompt">
+              <PromptBox onSubmit={startProject} />
+            </div>
+          </div>
+        </main>
+      ) : (
       <div className="product-content">
         <form
           className="dashboard-prompt"
@@ -114,7 +146,7 @@ export function Dashboard() {
               <Menu size={15} />
             </button>
           </div>
-          <Button onClick={() => navigate("/workspace/new")}>
+          <Button onClick={() => setIsCreating(true)}>
             <Plus size={15} /> New project
           </Button>
         </div>
@@ -159,6 +191,7 @@ export function Dashboard() {
           </AnimatePresence>
         </motion.div>
       </div>
+      )}
     </ProductShell>
   );
 }

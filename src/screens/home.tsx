@@ -3,14 +3,68 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowRight, AlertCircle, BarChart3, Blocks, Bot, Check, CheckCircle2,
-  ChevronDown, CircleCheck, Code2, Copy, CreditCard, ExternalLink, Eye,
-  FileCode2, FolderKanban, GitFork, Grid2X2, Globe2, History, KeyRound,
-  LayoutTemplate, Menu, Monitor, MoreHorizontal, PanelLeftClose, Plug, Plus,
-  Rocket, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Sparkles,
-  TerminalSquare, Trash2, User, Users, WandSparkles, X, Zap,
+  ArrowRight,
+  AlertCircle,
+  BarChart3,
+  Blocks,
+  Bot,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleCheck,
+  Code2,
+  Copy,
+  CreditCard,
+  ExternalLink,
+  Eye,
+  FileCode2,
+  FolderKanban,
+  GitFork,
+  Grid2X2,
+  Globe2,
+  History,
+  KeyRound,
+  LayoutTemplate,
+  Menu,
+  Monitor,
+  MoreHorizontal,
+  PanelLeftClose,
+  Plug,
+  Plus,
+  Rocket,
+  Search,
+  Send,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  TerminalSquare,
+  Trash2,
+  User,
+  Users,
+  WandSparkles,
+  X,
+  Zap,
 } from "lucide-react";
-import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp } from "../components/shared";
+import {
+  Badge,
+  Button,
+  Logo,
+  ThemeToggle,
+  AppHeader,
+  routeToLogin,
+  navigate,
+  PromptBox,
+  WorkspacePreview,
+  SectionTitle,
+  ProductShell,
+  StatusBadge,
+  examples,
+  features,
+  plans,
+  faqs,
+  fadeUp,
+} from "../components/shared";
 
 export function Home() {
   const reducedMotion = useReducedMotion();
@@ -319,6 +373,5 @@ function Footer() {
     </footer>
   );
 }
-
 
 export default Home;

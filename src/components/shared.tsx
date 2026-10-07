@@ -72,6 +72,7 @@ export const templates = [
 ];
 
 export const sidebarItems = [
+  ["/dashboard/new", Plus, "New project"],
   ["/dashboard", FolderKanban, "Projects"],
   ["/templates", LayoutTemplate, "Templates"],
   ["/settings/usage", BarChart3, "Usage"],
@@ -326,7 +327,11 @@ export function navigate(path: string) {
   window.location.assign(path);
 }
 
-export function PromptBox() {
+export function PromptBox({
+  onSubmit,
+}: {
+  onSubmit?: (prompt: string) => void;
+}) {
   const [prompt, setPrompt] = useState("");
   const [focused, setFocused] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -340,7 +345,9 @@ export function PromptBox() {
   }, [focused, prompt]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    routeToLogin(prompt || examples[placeholderIndex]);
+    const submittedPrompt = prompt || examples[placeholderIndex];
+    if (onSubmit) onSubmit(submittedPrompt);
+    else routeToLogin(submittedPrompt);
   };
   return (
     <form className="prompt-box" onSubmit={submit}>
@@ -518,9 +525,13 @@ export function SectionTitle({
 export function ProductShell({
   children,
   title,
+  onNewProject,
+  newProjectActive = false,
 }: {
   children: React.ReactNode;
   title: string;
+  onNewProject?: () => void;
+  newProjectActive?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -547,8 +558,20 @@ export function ProductShell({
           {sidebarItems.map(([path, Icon, label]) => (
             <button
               key={path as string}
-              className={window.location.pathname === path ? "active" : ""}
-              onClick={() => navigate(path as string)}
+              className={
+                ((!newProjectActive && window.location.pathname === path) ||
+                (path === "/dashboard/new" && newProjectActive))
+                  ? "active"
+                  : ""
+              }
+              onClick={() => {
+                if (path === "/dashboard/new") {
+                  if (onNewProject) onNewProject();
+                  else navigate("/dashboard?newProject=1");
+                  return;
+                }
+                navigate(path as string);
+              }}
             >
               <Icon size={17} />
               <span>{label as string}</span>
