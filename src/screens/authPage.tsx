@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, AlertCircle, BarChart3, Blocks, Bot, Check, CheckCircle2,
@@ -13,7 +14,50 @@ import {
 import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp } from "../components/shared";
 
 export function AuthPage({ mode }: { mode: "signup" | "forgot" }) {
-  const [sent, setSent] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSignup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result?.error?.message ?? "We couldn’t create your account.");
+        return;
+      }
+
+      const signInResult = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+        redirectTo: "/dashboard",
+      });
+
+      if (signInResult?.error || !signInResult?.url) {
+        setError("Your account was created. Please log in to continue.");
+        return;
+      }
+
+      window.location.assign(signInResult.url);
+    } catch {
+      setError("We couldn’t create your account. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="auth-page">
       <div className="auth-form-panel">
@@ -27,45 +71,55 @@ export function AuthPage({ mode }: { mode: "signup" | "forgot" }) {
             <h1>
               {mode === "signup"
                 ? "Create your account"
-                : sent
-                  ? "Check your inbox"
-                  : "Reset your password"}
+                : "Reset your password"}
             </h1>
             <p>
               {mode === "signup"
                 ? "Start building your first project for free."
-                : sent
-                  ? "We sent a reset link to you@company.com."
-                  : "We’ll send you a secure reset link."}
+                : "Password reset isn’t available yet."}
             </p>
           </div>
-          {sent ? (
-            <div className="success-state">
-              <CheckCircle2 size={28} />
-              <p>Didn’t receive it? Resend in 30s</p>
-              <Button variant="secondary" onClick={() => navigate("/login")}>
-                Back to login
-              </Button>
-            </div>
+          {mode === "forgot" ? (
+            <Button variant="secondary" onClick={() => navigate("/login")}>
+              Back to login
+            </Button>
           ) : (
             <>
-              {mode === "signup" && (
+              <form className="auth-fields" onSubmit={handleSignup}>
                 <label>
                   Name
-                  <input placeholder="Your name" />
+                  <input
+                    name="name"
+                    autoComplete="name"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={80}
+                  />
                 </label>
-              )}
-              <label>
-                Email
-                <input type="email" placeholder="you@company.com" />
-              </label>
-              {mode === "signup" && (
-                <>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                  />
+                </label>
                   <label>
                     Password
                     <input
                       type="password"
+                      name="new-password"
+                      autoComplete="new-password"
                       placeholder="At least 8 characters"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      minLength={8}
+                      required
                     />
                   </label>
                   <div className="strength">
@@ -78,20 +132,13 @@ export function AuthPage({ mode }: { mode: "signup" | "forgot" }) {
                     <Check size={12} /> 8+ characters &nbsp; <Check size={12} />{" "}
                     One number
                   </p>
-                </>
-              )}
-              <Button
-                onClick={() =>
-                  mode === "forgot" ? setSent(true) : navigate("/dashboard")
-                }
-              >
-                {mode === "signup" ? "Create account" : "Send reset link"}{" "}
-                <ArrowRight size={15} />
-              </Button>
+                {error && <p className="auth-error" role="alert">{error}</p>}
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Creating account…" : "Create account"} <ArrowRight size={15} />
+                </Button>
+              </form>
               <p className="auth-switch">
-                <button onClick={() => navigate("/login")}>
-                  Back to login
-                </button>
+                Already have an account? <button onClick={() => navigate("/login")}>Log in</button>
               </p>
             </>
           )}

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { signOut } from "next-auth/react";
 import {
   ArrowRight,
   AlertCircle,
@@ -206,12 +207,14 @@ export function Button({
   className = "",
   type = "button",
   onClick,
+  disabled = false,
 }: {
   children: React.ReactNode;
   variant?: "primary" | "secondary" | "ghost";
   className?: string;
   type?: "button" | "submit";
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <motion.button
@@ -219,6 +222,7 @@ export function Button({
       className={`button button-${variant} ${className}`}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
+      disabled={disabled}
     >
       {children}
     </motion.button>
@@ -585,7 +589,12 @@ export function ProductShell({
             <p>Upgrade for unlimited projects and private sharing.</p>
             <Button onClick={() => navigate("/pricing")}>Upgrade</Button>
           </div>
-          <button className="user-menu">
+          <button
+            className="user-menu"
+            aria-label="Sign out"
+            title="Sign out"
+            onClick={() => void signOut({ redirectTo: "/login" })}
+          >
             <span className="avatar">AM</span>
             <span>
               Avery Morgan<small>avery@acme.co</small>

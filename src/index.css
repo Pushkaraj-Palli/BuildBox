@@ -197,6 +197,9 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .auth-heading h1 { margin: 0 0 7px; font-size: 30px; letter-spacing: -.04em; }
 .auth-heading p, .auth-switch { margin: 0; color: var(--muted-foreground); }
 .auth-form > .button { width: 100%; }
+.auth-form .button:disabled { opacity: .55; cursor: not-allowed; }
+.auth-fields { display: grid; gap: 12px; }
+.auth-error { margin: 0; color: var(--danger); font-size: 12px; }
 .prompt-banner { display: flex; gap: 10px; padding: 11px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, var(--card)); color: var(--muted-foreground); font-size: 11px; }
 .prompt-banner svg { flex: 0 0 auto; color: #a5b4fc; }
 .prompt-banner b { color: var(--foreground); font-weight: 500; }
