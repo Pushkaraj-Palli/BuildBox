@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum GenerationStatus {
+  PENDING
+  PLANNING
+  GENERATING
+  VALIDATING
+  REPAIRING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String?
+  email          String          @unique
+  passwordHash   String          @map("password_hash")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  projects       Project[]
+  conversations  Conversation[]
+  generationJobs GenerationJob[]
+  deployments    Deployment[]
+  usageRecords   UsageRecord[]
+
+  @@map("users")
+}
+
+model Project {
+  id             String           @id @default(cuid())
+  userId         String           @map("user_id")
+  name           String
+  description    String?
+  framework      String?
+  status         ProjectStatus    @default(ACTIVE)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files          ProjectFile[]
+  versions       ProjectVersion[]
+  conversations  Conversation[]
+  generationJobs GenerationJob[]
+  deployments    Deployment[]
+  usageRecords   UsageRecord[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("projects")
+}
+
+model ProjectFile {
+  id        String   @id @default(cuid())
+  projectId String   @map("project_id")
+  path      String
+  content   String   @db.Text
+  language  String?
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@map("project_files")
+}
+
+model ProjectVersion {
+  id            String   @id @default(cuid())
+  projectId     String   @map("project_id")
+  versionNumber Int      @map("version_number")
+  description   String?
+  snapshot      Json
+  createdBy     String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@map("project_versions")
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  projectId String    @map("project_id")
+  userId    String    @map("user_id")
+  title     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String       @map("conversation_id")
+  role           MessageRole
+  content        String       @db.Text
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model GenerationJob {
+  id           String           @id @default(cuid())
+  projectId    String           @map("project_id")
+  userId       String           @map("user_id")
+  prompt       String           @db.Text
+  status       GenerationStatus @default(PENDING)
+  attempt      Int              @default(0)
+  startedAt    DateTime?        @map("started_at")
+  completedAt  DateTime?        @map("completed_at")
+  errorMessage String?          @map("error_message") @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs         GenerationLog[]
+  usageRecords UsageRecord[]
+
+  @@index([projectId])
+  @@index([status])
+  @@map("generation_jobs")
+}
+
+model GenerationLog {
+  id              String        @id @default(cuid())
+  generationJobId String        @map("generation_job_id")
+  stage           String
+  level           String
+  message         String        @db.Text
+  metadata        Json?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  generationJob   GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+
+  @@index([generationJobId])
+  @@map("generation_logs")
+}
+
+model Deployment {
+  id                   String   @id @default(cuid())
+  projectId            String   @map("project_id")
+  userId               String   @map("user_id")
+  status               String
+  provider             String?
+  deploymentUrl        String?  @map("deployment_url")
+  providerDeploymentId String?  @map("provider_deployment_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+  @@map("deployments")
+}
+
+model UsageRecord {
+  id              String         @id @default(cuid())
+  userId          String         @map("user_id")
+  projectId       String?        @map("project_id")
+  generationJobId String?        @map("generation_job_id")
+  provider        String?
+  model           String?
+  inputTokens     Int?           @map("input_tokens")
+  outputTokens    Int?           @map("output_tokens")
+  estimatedCost   Decimal?       @map("estimated_cost") @db.Decimal(12, 6)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  generationJob   GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@map("usage_records")
+}

@@ -26,11 +26,17 @@ pnpm-debug.log*
 # TypeScript and generated Next.js declarations
 *.tsbuildinfo
 /next-env.d.ts
+/src/generated/prisma/
 
 # Test and coverage output
 /coverage/
 /playwright-report/
 /test-results/
+
+# Local agent notes and documentation
+agent.md
+AGENTS.md
+/docs/
 
 # Local operating-system and editor files
 .DS_Store
