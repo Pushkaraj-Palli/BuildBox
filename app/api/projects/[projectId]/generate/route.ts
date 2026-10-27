@@ -1,0 +1,40 @@
+import { auth } from "@/auth";
+import { ApiError, errorResponse } from "@/lib/server/api-error";
+import { AIProviderError } from "@/lib/server/ai/types";
+import { generateProject } from "@/lib/server/generation/generate-project";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const requestId = crypto.randomUUID();
+
+  try {
+    const session = await auth();
+    if (!session?.user?.id) throw new ApiError(401, "UNAUTHORIZED", "Sign in to generate this project.");
+
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > 20_000) throw new ApiError(413, "REQUEST_TOO_LARGE", "Generation request is too large.");
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      throw new ApiError(400, "INVALID_JSON", "Request body must be valid JSON.");
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new ApiError(400, "INVALID_INPUT", "Provide a prompt to generate the project.");
+    }
+    const prompt = (body as Record<string, unknown>).prompt;
+    if (typeof prompt !== "string") throw new ApiError(400, "INVALID_PROMPT", "Provide a project prompt.");
+
+    const { projectId } = await params;
+    const result = await generateProject({ projectId, userId: session.user.id, prompt });
+    return Response.json({ success: true, data: result, requestId }, { status: 201 });
+  } catch (error) {
+    if (error instanceof AIProviderError) {
+      return errorResponse(new ApiError(error.status, error.code, error.message), requestId);
+    }
+    return errorResponse(error, requestId);
+  }
+}
