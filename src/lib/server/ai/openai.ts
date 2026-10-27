@@ -18,14 +18,14 @@ type OpenAIResponse = {
   model?: string;
   choices?: Array<{ message?: { content?: string | null } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
-  error?: { message?: string; code?: string };
+  error?: { message?: string; code?: string; type?: string };
 };
 
 type OpenAIStreamChunk = {
   model?: string;
   choices?: Array<{ delta?: { content?: string | null } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
-  error?: { message?: string; code?: string };
+  error?: { message?: string; code?: string; type?: string };
 };
 
 function getConfig() {
@@ -85,7 +85,25 @@ async function sendRequest(body: Record<string, unknown>): Promise<Response> {
   if (response.ok) return response;
 
   if (response.status === 429) {
-    throw new AIProviderError("AI_RATE_LIMITED", "The AI provider is busy. Try again shortly.", 429);
+    let providerCode = "";
+    try {
+      const body = await response.clone().json() as OpenAIResponse;
+      providerCode = `${body.error?.code ?? ""} ${body.error?.type ?? ""}`.toLowerCase();
+    } catch {
+      // Use the generic rate-limit guidance if the provider response is not JSON.
+    }
+    if (providerCode.includes("insufficient_quota") || providerCode.includes("billing_hard_limit")) {
+      throw new AIProviderError(
+        "AI_QUOTA_EXCEEDED",
+        "The OpenAI API project has no available quota or has reached its spending limit. Check API billing and project limits, then retry.",
+        429,
+      );
+    }
+    throw new AIProviderError(
+      "AI_RATE_LIMITED",
+      "The OpenAI API rate limit was reached. Wait briefly and retry. If this continues, check the API project's rate limits.",
+      429,
+    );
   }
   if (response.status === 401 || response.status === 403) {
     throw new AIProviderError("AI_CONFIGURATION_ERROR", "The AI provider configuration was rejected.", 503);

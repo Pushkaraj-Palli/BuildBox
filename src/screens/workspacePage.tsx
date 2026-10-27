@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, AlertCircle, BarChart3, Blocks, Bot, Check, CheckCircle2,
@@ -12,108 +13,240 @@ import {
 } from "lucide-react";
 import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp } from "../components/shared";
 
+type WorkspaceProject = { id: string; name: string; description: string | null; framework: string | null };
+type WorkspaceFile = { id: string; path: string; content: string; language: string | null; version: number; updatedAt: string };
+type GenerationInfo = { id: string; status: string; errorMessage?: string | null };
+
 export function WorkspacePage() {
+  const params = useParams<{ project: string }>();
+  const projectId = params.project;
   const [overlay, setOverlay] = useState<"deploy" | "share" | "history" | null>(
     null,
   );
+  const [project, setProject] = useState<WorkspaceProject | null>(null);
+  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [editorContent, setEditorContent] = useState("");
+  const [draft, setDraft] = useState("");
+  const [lastPrompt, setLastPrompt] = useState("");
+  const [generation, setGeneration] = useState<GenerationInfo | null>(null);
+  const [generationLogs, setGenerationLogs] = useState<Array<{ id: string; stage: string; level: string; message: string }>>([]);
+  const [activeView, setActiveView] = useState<"preview" | "code">("preview");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const queuedPrompt = useRef<string | null>(null);
+  const autoGenerationStarted = useRef(false);
+  const statusPollTimer = useRef<number | null>(null);
+
+  const selectedFile = files.find((file) => file.id === selectedFileId) ?? null;
+  const hasUnsavedChanges = selectedFile !== null && selectedFile.content !== editorContent;
+
+  const loadWorkspace = async () => {
+    const [projectResponse, filesResponse, generationsResponse] = await Promise.all([
+      fetch(`/api/projects/${projectId}`),
+      fetch(`/api/projects/${projectId}/files`),
+      fetch(`/api/projects/${projectId}/generations`),
+    ]);
+    const [projectResult, filesResult, generationsResult] = await Promise.all([
+      projectResponse.json(), filesResponse.json(), generationsResponse.json(),
+    ]);
+    if (!projectResponse.ok) throw new Error(projectResult.error?.message || "Could not load this project.");
+    if (!filesResponse.ok) throw new Error(filesResult.error?.message || "Could not load project files.");
+    if (!generationsResponse.ok) throw new Error(generationsResult.error?.message || "Could not load generation status.");
+
+    setProject(projectResult.data);
+    setFiles(filesResult.data);
+    const latestGeneration = generationsResult.data[0] ?? null;
+    setGeneration(latestGeneration);
+    if (filesResult.data.length > 0) {
+      const currentId = filesResult.data.some((file: WorkspaceFile) => file.id === selectedFileId)
+        ? selectedFileId
+        : filesResult.data[0].id;
+      setSelectedFileId(currentId);
+      const currentFile = filesResult.data.find((file: WorkspaceFile) => file.id === currentId);
+      if (currentFile && (!selectedFile || currentFile.id !== selectedFile.id)) setEditorContent(currentFile.content);
+    }
+    return { project: projectResult.data as WorkspaceProject, files: filesResult.data as WorkspaceFile[], generation: latestGeneration as GenerationInfo | null };
+  };
+
+  const loadGenerationLogs = async (generationId: string) => {
+    const response = await fetch(`/api/projects/${projectId}/generations/${generationId}`);
+    const result = await response.json();
+    if (response.ok) setGenerationLogs(result.data.logs);
+  };
+
+  const runGeneration = async (prompt: string) => {
+    const normalizedPrompt = prompt.trim();
+    if (!normalizedPrompt || isGenerating) return;
+    setIsGenerating(true);
+    setError("");
+    setSaveMessage("");
+    setLastPrompt(normalizedPrompt);
+    setDraft("");
+
+    statusPollTimer.current = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/generations`);
+        const result = await response.json();
+        const latest = result.data?.[0];
+        if (response.ok && latest) {
+          setGeneration(latest);
+          await loadGenerationLogs(latest.id);
+        }
+      } catch {
+        // The generation request reports its final error; status polling is best effort.
+      }
+    }, 1800);
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: normalizedPrompt }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "Project generation failed.");
+      setGeneration({ id: result.data.id, status: result.data.status });
+      await loadWorkspace();
+      await loadGenerationLogs(result.data.id);
+      setActiveView("code");
+    } catch (generationError) {
+      setError(generationError instanceof Error ? generationError.message : "Project generation failed.");
+      try { await loadWorkspace(); } catch { /* Preserve the generation error for the user. */ }
+    } finally {
+      if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
+      statusPollTimer.current = null;
+      setIsGenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    queuedPrompt.current = sessionStorage.getItem("buildbox-prompt");
+    sessionStorage.removeItem("buildbox-prompt");
+    const bootstrap = async () => {
+      try {
+        const data = await loadWorkspace();
+        if (data.files.length === 0 && ["PENDING", "PLANNING", "GENERATING", "VALIDATING"].includes(data.generation?.status ?? "")) {
+          setIsGenerating(true);
+          statusPollTimer.current = window.setInterval(() => {
+            void loadWorkspace().then((latest) => {
+              if (["COMPLETED", "FAILED"].includes(latest.generation?.status ?? "")) {
+                if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
+                statusPollTimer.current = null;
+                setIsGenerating(false);
+                if (latest.generation?.status === "COMPLETED") setFiles(latest.files);
+              }
+            }).catch(() => undefined);
+          }, 1800);
+          return;
+        }
+        const prompt = queuedPrompt.current || data.project.description || "";
+        if (data.files.length === 0 && data.generation?.status !== "FAILED" && prompt && !autoGenerationStarted.current) {
+          autoGenerationStarted.current = true;
+          setDraft(prompt);
+          void runGeneration(prompt);
+        }
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Could not load this project.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void bootstrap();
+    // Load once for the project route; workspace updates use explicit refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  useEffect(() => () => {
+    if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
+  }, []);
+
+  const saveSelectedFile = async () => {
+    if (!selectedFile || !hasUnsavedChanges || isSaving) return;
+    setIsSaving(true);
+    setError("");
+    setSaveMessage("");
+    try {
+      const response = await fetch(`/api/projects/${projectId}/files/${selectedFile.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editorContent }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "Could not save this file.");
+      setFiles((current) => current.map((file) => file.id === result.data.id ? result.data : file));
+      setEditorContent(result.data.content);
+      setSaveMessage("Saved");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save this file.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const statusLabel: Record<string, string> = {
+    PENDING: "Queued",
+    PLANNING: "Planning application",
+    GENERATING: "Generating files",
+    VALIDATING: "Checking project files",
+    COMPLETED: "Files saved",
+    FAILED: "Generation failed",
+  };
+
   return (
-    <div className="workspace-page">
+    <div className="workspace-page builder-workspace">
       <header>
-        <Logo />
-        <div className="workspace-name">
-          Atlas Analytics <span>Saved</span>
-        </div>
-        <div>
-          <Button variant="ghost" onClick={() => setOverlay("history")}>
-            <History size={15} /> History
-          </Button>
-          <Button variant="secondary" onClick={() => setOverlay("share")}>
-            <Users size={15} /> Share
-          </Button>
-          <Button onClick={() => setOverlay("deploy")}>
-            <Rocket size={15} /> Deploy
-          </Button>
-        </div>
+        <div className="builder-brand"><button className="builder-back" onClick={() => navigate("/dashboard")} aria-label="Back to projects"><ArrowRight size={16} /></button><Logo /></div>
+        <div className="workspace-name">{project?.name ?? "Loading project…"} <span>{isGenerating ? "Building" : hasUnsavedChanges ? "Unsaved changes" : "Saved"}</span></div>
+        <div><Button variant="secondary" onClick={() => setOverlay("history")}><History size={15} /> History</Button></div>
       </header>
-      <div className="full-workspace">
-        <div className="workspace-chat">
-          <button className="back-link" onClick={() => navigate("/dashboard")}>
-            <ArrowRight size={14} /> Projects
-          </button>
+      <div className="builder-layout">
+        <aside className="builder-sidebar">
           <h2>Build with BuildBox</h2>
-          <div className="message user-message">
-            Create a focused analytics dashboard with revenue, activation, and
-            retention.
-          </div>
-          <div className="message ai-message">
-            <span className="bot-avatar">
-              <Bot size={14} />
-            </span>
-            <div>
-              <p>
-                I’ve created the dashboard shell and connected realistic data.
-              </p>
-              <div className="build-step">
-                <CircleCheck size={14} /> Dashboard layout
-              </div>
-              <div className="build-step">
-                <CircleCheck size={14} /> Responsive charts
-              </div>
-              <div className="build-step active">
-                <span className="pulse-dot" /> Preview ready
-              </div>
+          {lastPrompt && <div className="message user-message">{lastPrompt}</div>}
+          {isGenerating ? (
+            <div className="builder-progress" role="status" aria-live="polite">
+              <span className="pulse-dot" />
+              <div><strong>{statusLabel[generation?.status ?? "PENDING"] || "Preparing your project"}</strong><small>{generationLogs.at(-1)?.message || "BuildBox is working through your project plan."}</small></div>
             </div>
-          </div>
-          <div className="workspace-composer">
-            <textarea placeholder="Ask BuildBox to make a change..." />
-            <button>
-              <Send size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="workspace-canvas">
-          <div className="canvas-toolbar">
-            <span>
-              <Monitor size={14} /> Preview
-            </span>
-            <div>
-              <button>
-                <Monitor size={14} />
-              </button>
-              <button>
-                <Eye size={14} />
-              </button>
+          ) : generation?.status === "COMPLETED" ? (
+            <div className="builder-progress completed"><CheckCircle2 size={16} /><div><strong>Project files are ready</strong><small>{files.length} files saved to this project.</small></div></div>
+          ) : null}
+          {generationLogs.length > 0 && <details className="builder-logs"><summary>Build steps</summary>{generationLogs.map((log) => <p key={log.id}><Check size={13} /> {log.message}</p>)}</details>}
+          {error && <p className="builder-error" role="alert"><AlertCircle size={14} /> {error}</p>}
+          {files.length === 0 && !isLoading ? (
+            <form className="workspace-composer" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void runGeneration(draft); }}>
+              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Describe the app you want to build..." disabled={isGenerating} />
+              <button type="submit" aria-label="Generate project" disabled={isGenerating || draft.trim().length < 10}>{isGenerating ? <span className="pulse-dot" /> : <Send size={16} />}</button>
+            </form>
+          ) : files.length > 0 ? <p className="iteration-note">You can edit and save generated files here. AI changes to existing projects are coming in the next iteration phase.</p> : null}
+        </aside>
+        <main className="builder-main">
+          <div className="builder-toolbar">
+            <div className="builder-view-tabs">
+              <button className={activeView === "preview" ? "active" : ""} onClick={() => setActiveView("preview")}><Eye size={14} /> Preview</button>
+              <button className={activeView === "code" ? "active" : ""} onClick={() => setActiveView("code")}><Code2 size={14} /> Code</button>
             </div>
+            {activeView === "code" && <div className="editor-actions"><span>{saveMessage || (hasUnsavedChanges ? "Unsaved changes" : selectedFile ? `v${selectedFile.version}` : "")}</span><Button variant="secondary" onClick={() => void saveSelectedFile()} disabled={!hasUnsavedChanges || isSaving}>{isSaving ? "Saving..." : "Save file"}</Button></div>}
           </div>
-          <div className="dashboard-mock">
-            <div className="mock-side">
-              <b>atlas</b>
-              {["Overview", "Analytics", "Customers", "Reports"].map((x, i) => (
-                <span className={i === 0 ? "active" : ""} key={x}>
-                  {x}
-                </span>
-              ))}
+          {isLoading ? <div className="builder-empty"><span className="pulse-dot" /> Loading project…</div> : activeView === "preview" ? (
+            <div className="builder-empty"><Monitor size={28} /><h2>{files.length ? "Preview is the next step" : isGenerating ? "Generating your app" : "Your preview will appear here"}</h2><p>{files.length ? "Your source files are saved. Live preview will be added in the next roadmap phase." : "Describe your idea in the panel to start generating project files."}</p></div>
+          ) : (
+            <div className="builder-code-workspace">
+              <nav className="builder-file-tree" aria-label="Project files">
+                <div className="file-tree-heading"><FolderKanban size={14} /> Files <span>{files.length}</span></div>
+                {files.map((file) => <button key={file.id} className={selectedFileId === file.id ? "selected" : ""} onClick={() => { setSelectedFileId(file.id); setEditorContent(file.content); setSaveMessage(""); }}><FileCode2 size={13} /><span>{file.path}</span></button>)}
+                {files.length === 0 && <p>No files generated yet.</p>}
+              </nav>
+              <section className="builder-editor" aria-label="Code editor">
+                {selectedFile ? <><div className="editor-file-title"><FileCode2 size={14} /> {selectedFile.path}</div><textarea spellCheck={false} aria-label={`Edit ${selectedFile.path}`} value={editorContent} onChange={(event) => { setEditorContent(event.target.value); setSaveMessage(""); }} /></> : <div className="builder-empty"><Code2 size={24} /><p>Select a file to view its contents.</p></div>}
+              </section>
             </div>
-            <div className="mock-main">
-              <small>OVERVIEW</small>
-              <h1>Good morning, Avery</h1>
-              <div className="mock-stats">
-                {["Revenue", "Active users", "Conversion"].map((x, i) => (
-                  <div key={x}>
-                    <span>{x}</span>
-                    <strong>
-                      {i === 0 ? "$84,240" : i === 1 ? "12,849" : "8.42%"}
-                    </strong>
-                    <small>↑ 12.4%</small>
-                  </div>
-                ))}
-              </div>
-              <div className="mock-chart">
-                <div className="chart-line" />
-              </div>
-            </div>
-          </div>
-        </div>
+          )}
+        </main>
       </div>
       <AnimatePresence>
         {overlay && (
