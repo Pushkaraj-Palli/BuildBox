@@ -1,7 +1,9 @@
 import { auth } from "@/auth";
+import { after } from "next/server";
 import { ApiError, errorResponse } from "@/lib/server/api-error";
 import { AIProviderError } from "@/lib/server/ai/types";
-import { generateProject } from "@/lib/server/generation/generate-project";
+import { logger } from "@/lib/server/logger";
+import { generateProject, startProjectGeneration } from "@/lib/server/generation/generate-project";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -29,8 +31,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (typeof prompt !== "string") throw new ApiError(400, "INVALID_PROMPT", "Provide a project prompt.");
 
     const { projectId } = await params;
-    const result = await generateProject({ projectId, userId: session.user.id, prompt });
-    return Response.json({ success: true, data: result, requestId }, { status: 201 });
+    const job = await startProjectGeneration({ projectId, userId: session.user.id, prompt });
+    after(async () => {
+      try {
+        await generateProject({ projectId, userId: session.user.id, prompt, generationJobId: job.id });
+      } catch (error) {
+        logger.error("generation.background_failed", {
+          requestId,
+          code: error instanceof AIProviderError ? error.code : "UNKNOWN_ERROR",
+          message: error instanceof AIProviderError ? error.message.slice(0, 400) : "Generation failed with an unexpected server error.",
+        });
+      }
+    });
+    return Response.json({ success: true, data: job, requestId }, { status: 202 });
   } catch (error) {
     if (error instanceof AIProviderError) {
       return errorResponse(new ApiError(error.status, error.code, error.message), requestId);

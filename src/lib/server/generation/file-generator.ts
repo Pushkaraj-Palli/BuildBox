@@ -1,4 +1,4 @@
-import { AIProviderError, type JSONSchema } from "@/lib/server/ai/types";
+import { AIProviderError, type AIResult, type JSONSchema } from "@/lib/server/ai/types";
 import { getAIProvider } from "@/lib/server/ai";
 import type { ApplicationPlan } from "@/lib/server/planning/application-plan";
 import { GENERATION_LIMITS, PROJECT_TEMPLATE, createPackageManifest, validateProjectDependencies } from "@/lib/server/generation/template";
@@ -76,7 +76,9 @@ function validateBatch(value: unknown, expectedPaths: string[]): Array<{ path: s
   return files as Array<{ path: string; content: string }>;
 }
 
-export async function generateProjectFiles(plan: ApplicationPlan) {
+type GenerationProgress = (message: string, metadata?: Record<string, string | number | string[]>) => Promise<void>;
+
+export async function generateProjectFiles(plan: ApplicationPlan, onProgress?: GenerationProgress) {
   if (plan.files.length + 1 > GENERATION_LIMITS.maxFiles) {
     throw new AIProviderError("GENERATION_LIMIT_EXCEEDED", "The project file manifest exceeds the current limit.", 400);
   }
@@ -97,9 +99,19 @@ export async function generateProjectFiles(plan: ApplicationPlan) {
 
   const generated: GeneratedFile[] = [];
   const usage: Array<{ provider: string; model: string; usage: { inputTokens: number | null; outputTokens: number | null }; durationMs: number }> = [];
-  for (const batch of batches) {
+  let completedBatches = 0;
+  let totalBatches = batches.length;
+  const generateBatch = async (batch: typeof manifest, label: string): Promise<void> => {
     const paths = batch.map(({ path }) => path);
-    const result = await getAIProvider().generateStructured<{ files: Array<{ path: string; content: string }> }>([
+    await onProgress?.(`Generating file batch ${label} of ${batches.length}: ${paths.join(", ")}.`, {
+      batch: label,
+      totalBatches,
+      files: paths,
+    });
+    const startedAt = Date.now();
+    let result: AIResult<{ files: Array<{ path: string; content: string }> }>;
+    try {
+      result = await getAIProvider().generateStructured<{ files: Array<{ path: string; content: string }> }>([
       { role: "system", content: GENERATOR_INSTRUCTIONS },
       {
         role: "user",
@@ -120,16 +132,58 @@ export async function generateProjectFiles(plan: ApplicationPlan) {
           ],
         }),
       },
-    ], {
-      name: "buildbox_generated_files",
-      description: "A batch of complete source files for the planned Next.js project.",
-      schema: makeBatchSchema(paths),
-      strict: true,
-    });
+      ], {
+        name: "buildbox_generated_files",
+        description: "A batch of complete source files for the planned Next.js project.",
+        schema: makeBatchSchema(paths),
+        strict: true,
+      });
+    } catch (error) {
+      if (error instanceof AIProviderError && error.code === "AI_TIMEOUT" && batch.length > 1) {
+        const splitAt = Math.ceil(batch.length / 2);
+        const first = batch.slice(0, splitAt);
+        const second = batch.slice(splitAt);
+        totalBatches += 1;
+        await onProgress?.(`File batch ${label} timed out after ${Date.now() - startedAt} ms; retrying as smaller batches.`, {
+          batch: label,
+          totalBatches,
+          files: paths,
+          durationMs: Date.now() - startedAt,
+          retryStrategy: "split_batch",
+        });
+        await generateBatch(first, `${label}.1`);
+        await generateBatch(second, `${label}.2`);
+        return;
+      }
+      await onProgress?.(`File batch ${label} failed after ${Date.now() - startedAt} ms: ${paths.join(", ")}.`, {
+        batch: label,
+        totalBatches,
+        files: paths,
+        durationMs: Date.now() - startedAt,
+        errorCode: error instanceof AIProviderError ? error.code : "UNKNOWN_ERROR",
+      });
+      throw error;
+    }
 
     const batchFiles = validateBatch(result.output, paths);
     generated.push(...batchFiles.map(({ path, content }) => ({ path, content, language: getLanguage(path) })));
     usage.push({ provider: result.provider, model: result.model, usage: result.usage, durationMs: result.durationMs });
+    completedBatches += 1;
+    await onProgress?.(`Generated file batch ${label} in ${result.durationMs} ms (${completedBatches} complete): ${paths.join(", ")}.`, {
+      batch: label,
+      completedBatches,
+      totalBatches,
+      files: paths,
+      provider: result.provider,
+      model: result.model,
+      durationMs: result.durationMs,
+      inputTokens: result.usage.inputTokens ?? -1,
+      outputTokens: result.usage.outputTokens ?? -1,
+    });
+  };
+
+  for (const [batchIndex, batch] of batches.entries()) {
+    await generateBatch(batch, String(batchIndex + 1));
   }
 
   const packageManifest = createPackageManifest(dependencies);

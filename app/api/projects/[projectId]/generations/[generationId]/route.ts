@@ -26,7 +26,7 @@ export async function GET(
         errorMessage: true,
         createdAt: true,
         updatedAt: true,
-        logs: { orderBy: { createdAt: "asc" }, select: { id: true, stage: true, level: true, message: true, createdAt: true } },
+        logs: { orderBy: { createdAt: "asc" }, select: { id: true, stage: true, level: true, message: true, metadata: true, createdAt: true } },
       },
     });
     if (!generation) throw new ApiError(404, "GENERATION_NOT_FOUND", "Generation was not found.");

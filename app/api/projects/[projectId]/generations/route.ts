@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
     const generations = await getPrisma().generationJob.findMany({
       where: { projectId, userId: session.user.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, status: true, attempt: true, createdAt: true, updatedAt: true, startedAt: true, completedAt: true, errorMessage: true },
+      select: { id: true, prompt: true, status: true, attempt: true, createdAt: true, updatedAt: true, startedAt: true, completedAt: true, errorMessage: true },
     });
     return Response.json({ success: true, data: generations, requestId });
   } catch (error) {

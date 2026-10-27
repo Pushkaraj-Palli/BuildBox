@@ -15,7 +15,7 @@ import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, Pr
 
 type WorkspaceProject = { id: string; name: string; description: string | null; framework: string | null };
 type WorkspaceFile = { id: string; path: string; content: string; language: string | null; version: number; updatedAt: string };
-type GenerationInfo = { id: string; status: string; errorMessage?: string | null };
+type GenerationInfo = { id: string; prompt?: string; status: string; errorMessage?: string | null };
 
 export function WorkspacePage() {
   const params = useParams<{ project: string }>();
@@ -87,20 +87,6 @@ export function WorkspacePage() {
     setLastPrompt(normalizedPrompt);
     setDraft("");
 
-    statusPollTimer.current = window.setInterval(async () => {
-      try {
-        const response = await fetch(`/api/projects/${projectId}/generations`);
-        const result = await response.json();
-        const latest = result.data?.[0];
-        if (response.ok && latest) {
-          setGeneration(latest);
-          await loadGenerationLogs(latest.id);
-        }
-      } catch {
-        // The generation request reports its final error; status polling is best effort.
-      }
-    }, 1800);
-
     try {
       const response = await fetch(`/api/projects/${projectId}/generate`, {
         method: "POST",
@@ -109,12 +95,28 @@ export function WorkspacePage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error?.message || "Project generation failed.");
-      setGeneration({ id: result.data.id, status: result.data.status });
+      const generationId = result.data.id as string;
+      setGeneration({ id: generationId, status: result.data.status });
+
+      // Generation runs as a persisted server job, so the browser can poll safely
+      // without holding the POST open for a multi-minute Gemini response.
+      while (true) {
+        const statusResponse = await fetch(`/api/projects/${projectId}/generations/${generationId}`);
+        const statusResult = await statusResponse.json();
+        if (!statusResponse.ok) throw new Error(statusResult.error?.message || "Could not check generation status.");
+        const latest = statusResult.data as GenerationInfo & { logs?: Array<{ id: string; stage: string; level: string; message: string }> };
+        setGeneration(latest);
+        setGenerationLogs(latest.logs ?? []);
+        if (latest.status === "FAILED") throw new Error(latest.errorMessage || "Project generation failed.");
+        if (latest.status === "COMPLETED") break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1800));
+      }
+
       await loadWorkspace();
-      await loadGenerationLogs(result.data.id);
       setActiveView("code");
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : "Project generation failed.");
+      setDraft(normalizedPrompt);
       try { await loadWorkspace(); } catch { /* Preserve the generation error for the user. */ }
     } finally {
       if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
@@ -144,6 +146,10 @@ export function WorkspacePage() {
           return;
         }
         const prompt = queuedPrompt.current || data.project.description || "";
+        if (data.files.length === 0 && data.generation?.status === "FAILED") {
+          setDraft(data.generation.prompt || prompt);
+          return;
+        }
         if (data.files.length === 0 && data.generation?.status !== "FAILED" && prompt && !autoGenerationStarted.current) {
           autoGenerationStarted.current = true;
           setDraft(prompt);

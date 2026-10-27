@@ -23,7 +23,7 @@ export const GENERATION_LIMITS = {
   maxFiles: 30,
   maxFileBytes: 200_000,
   maxProjectBytes: 1_000_000,
-  filesPerRequest: 4,
+  filesPerRequest: 2,
 } as const;
 
 export function validateProjectDependencies(names: string[]): string[] {

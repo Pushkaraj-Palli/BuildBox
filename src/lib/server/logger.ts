@@ -1,6 +1,10 @@
 type LogContext = {
   requestId?: string;
   code?: string;
+  message?: string;
+  model?: string;
+  status?: number;
+  stage?: string;
 };
 
 function writeLog(level: "info" | "error", event: string, context: LogContext = {}) {
