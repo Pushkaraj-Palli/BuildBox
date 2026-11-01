@@ -96,6 +96,42 @@ function validateRoutePath(path: unknown): path is string {
     !path.split("/").includes("..") && path.split("/").every((segment) => segment !== ".");
 }
 
+function titleFromRoute(path: string, index: number): string {
+  const lastSegment = path.split("/").filter(Boolean).at(-1);
+  if (!lastSegment) return "Home";
+  const title = lastSegment.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+  return title || `Page ${index + 1}`;
+}
+
+function slugFromTitle(title: string, index: number): string {
+  const slug = title.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return slug || `page-${index + 1}`;
+}
+
+function normalizePlannedPages(value: unknown): void {
+  if (!isRecord(value) || !Array.isArray(value.pages)) return;
+  value.pages = value.pages.map((page, index) => {
+    if (!isRecord(page)) return page;
+
+    let path = typeof page.path === "string" ? page.path.trim().split(/[?#]/, 1)[0].trim() : "";
+    const originalTitle = typeof page.title === "string" ? page.title.trim() : "";
+    if (!path) {
+      path = originalTitle ? `/${slugFromTitle(originalTitle, index)}` : index === 0 ? "/" : `/page-${index + 1}`;
+    } else if (!path.startsWith("/") && !path.startsWith("\\")) {
+      path = `/${path}`;
+    }
+    path = path.replace(/\s+/g, "-").replace(/\/{2,}/g, "/");
+    if (path.length > 200 && originalTitle) path = `/${slugFromTitle(originalTitle, index)}`;
+    if (path.length > 1) path = path.replace(/\/$/, "");
+
+    const title = originalTitle.slice(0, 80) || titleFromRoute(path, index);
+    const originalPurpose = typeof page.purpose === "string" ? page.purpose.trim() : "";
+    const purpose = originalPurpose.slice(0, 240) || `The ${title} page for this application.`;
+    return { ...page, path, title, purpose };
+  });
+}
+
 function validateFilePath(path: unknown): path is string {
   if (typeof path !== "string" || !path || path.length > 240 || path.startsWith("/") || path.includes("\\") || path.includes(":")) return false;
   const segments = path.split("/");
@@ -163,6 +199,7 @@ export async function createApplicationPlan(prompt: string) {
     strict: true,
   });
 
+  normalizePlannedPages(result.output);
   validatePlan(result.output);
   return result;
 }

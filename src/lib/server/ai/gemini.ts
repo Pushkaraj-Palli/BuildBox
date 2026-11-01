@@ -10,13 +10,14 @@ import {
 import { logger } from "@/lib/server/logger";
 
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const REQUEST_TIMEOUT_MS = 240_000;
+const PRIMARY_TIMEOUT_MS = 45_000;
+const FALLBACK_TIMEOUT_MS = 75_000;
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_CHARS = 50_000;
 const MAX_TOTAL_MESSAGE_CHARS = 100_000;
 const MAX_STRUCTURED_OUTPUT_TOKENS = 16_384;
 const MAX_TEXT_OUTPUT_TOKENS = 4_096;
-const MAX_TRANSIENT_RETRIES = 2;
+const MAX_TRANSIENT_RETRIES = 1;
 
 type GeminiResponse = {
   modelVersion?: string;
@@ -30,12 +31,14 @@ type GeminiResponse = {
 
 function getConfig() {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const configuredModel = (process.env.GEMINI_MODEL || "gemini-3.8-flash").trim();
-  // Google now routes this deprecated alias to 3.8; use the current model explicitly.
+  const configuredModel = (process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
   const model = configuredModel === "gemini-3.7-flash" ? "gemini-3.8-flash" : configuredModel;
+  const fallbackModel = (process.env.GEMINI_FALLBACK_MODEL || (model.includes("flash-lite") ? "gemini-3.6-flash" : "gemini-3.5-flash-lite")).trim();
   if (!apiKey) throw new AIProviderError("AI_NOT_CONFIGURED", "Gemini is not configured. Add GEMINI_API_KEY to the server environment.", 503);
-  if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new AIProviderError("AI_NOT_CONFIGURED", "GEMINI_MODEL is invalid.", 503);
-  return { apiKey, model };
+  if (![model, fallbackModel].every((name) => /^[a-zA-Z0-9._-]+$/.test(name))) {
+    throw new AIProviderError("AI_NOT_CONFIGURED", "GEMINI_MODEL or GEMINI_FALLBACK_MODEL is invalid.", 503);
+  }
+  return { apiKey, model, fallbackModel };
 }
 
 function validateMessages(messages: AIMessage[]) {
@@ -88,25 +91,38 @@ function readText(response: GeminiResponse): string {
   return output;
 }
 
-async function sendRequest(body: Record<string, unknown>, stream = false): Promise<Response> {
-  const { apiKey, model } = getConfig();
+async function sendModelRequest(
+  body: Record<string, unknown>,
+  apiKey: string,
+  model: string,
+  stream: boolean,
+  timeoutMs: number,
+): Promise<Response> {
   const endpoint = `${API_URL}/${encodeURIComponent(model)}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+  const generation = body.generationConfig;
+  const requestBody = generation && typeof generation === "object" && !Array.isArray(generation)
+    ? {
+        ...body,
+        generationConfig: {
+          ...generation,
+          thinkingConfig: { thinkingLevel: model.includes("flash-lite") ? "minimal" : "low" },
+        },
+      }
+    : body;
   let response: Response | undefined;
   for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt += 1) {
     try {
       response = await fetch(endpoint, {
         method: "POST",
         headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(timeoutMs),
         cache: "no-store",
       });
     } catch (error) {
-      if (error instanceof Error && error.name === "TimeoutError") {
-        throw new AIProviderError("AI_TIMEOUT", "Gemini took too long to respond. Try again.", 504);
-      }
+      if (error instanceof Error && error.name === "TimeoutError") throw error;
       if (attempt < MAX_TRANSIENT_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 1_000 * (2 ** attempt) + Math.floor(Math.random() * 400)));
+        await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 500)));
         continue;
       }
       throw new AIProviderError("AI_UNAVAILABLE", "Gemini could not be reached. Check your internet connection and try again.", 502);
@@ -121,16 +137,64 @@ async function sendRequest(body: Record<string, unknown>, stream = false): Promi
       break;
     }
 
-    const retryAfter = Number(response.headers.get("retry-after"));
-    const retryDelay = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.min(retryAfter * 1_000, 30_000)
-      : 1_000 * (2 ** attempt) + Math.floor(Math.random() * 400);
-    await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 500)));
   }
 
   if (!response) throw new AIProviderError("AI_UNAVAILABLE", "Gemini could not be reached.", 502);
+  return response;
+}
 
-  if (response.ok) return response;
+async function isQuotaFailure(response: Response): Promise<boolean> {
+  if (response.status !== 429) return false;
+  try {
+    const message = ((await response.clone().json() as GeminiResponse).error?.message ?? "").toLowerCase();
+    return message.includes("quota") || message.includes("billing");
+  } catch {
+    return false;
+  }
+}
+
+async function sendRequest(body: Record<string, unknown>, stream = false): Promise<{ response: Response; model: string }> {
+  const { apiKey, model, fallbackModel } = getConfig();
+  let response: Response;
+  let usedModel = model;
+  let shouldFallback = false;
+  let primaryTimedOut = false;
+  try {
+    response = await sendModelRequest(body, apiKey, model, stream, PRIMARY_TIMEOUT_MS);
+    shouldFallback = !response.ok && ([408, 429, 500, 502, 503, 504].includes(response.status)) &&
+      !(await isQuotaFailure(response));
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      shouldFallback = true;
+      primaryTimedOut = true;
+    } else if (error instanceof AIProviderError && error.code === "AI_UNAVAILABLE") {
+      shouldFallback = true;
+    } else {
+      throw error;
+    }
+    if (fallbackModel === model && primaryTimedOut) {
+      throw new AIProviderError("AI_TIMEOUT", `Gemini model ${model} did not respond within ${PRIMARY_TIMEOUT_MS / 1_000} seconds.`, 504);
+    }
+    response = new Response(null, { status: 503 });
+  }
+
+  if (shouldFallback && fallbackModel !== model) {
+    logger.info("gemini.fallback_started", { model, message: `Retrying with ${fallbackModel} after a temporary primary-model failure.` });
+    usedModel = fallbackModel;
+    try {
+      response = await sendModelRequest(body, apiKey, fallbackModel, stream, FALLBACK_TIMEOUT_MS);
+    } catch (error) {
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new AIProviderError("AI_TIMEOUT", `Gemini models ${model} and ${fallbackModel} did not respond before their time limits.`, 504);
+      }
+      throw error;
+    }
+  } else if (!response.ok && shouldFallback) {
+    throw new AIProviderError("AI_UNAVAILABLE", `Gemini model ${model} is temporarily unavailable. Try again shortly.`, 503);
+  }
+
+  if (response.ok) return { response, model: usedModel };
 
   let providerError: GeminiResponse["error"];
   try { providerError = (await response.clone().json() as GeminiResponse).error; } catch { /* Use a safe generic message. */ }
@@ -171,7 +235,7 @@ async function sendRequest(body: Record<string, unknown>, stream = false): Promi
     .slice(0, 320);
   const providerStatus = providerError?.status || `HTTP ${response.status}`;
   logger.error("gemini.request_failed", {
-    model,
+    model: usedModel,
     status: response.status,
     code: providerStatus,
     message: providerMessage || "Gemini returned no error details.",
@@ -211,9 +275,9 @@ function generationConfig(options?: StructuredOutputOptions) {
 export class GeminiProvider implements AIProvider {
   async generateText(messages: AIMessage[]): Promise<AIResult> {
     validateMessages(messages);
-    const { model } = getConfig();
     const startedAt = Date.now();
-    const response = await sendRequest({ ...makeContents(messages), generationConfig: generationConfig() });
+    const request = await sendRequest({ ...makeContents(messages), generationConfig: generationConfig() });
+    const { response, model } = request;
     const result = await parseResponse(response);
     return {
       provider: "gemini",
@@ -226,9 +290,9 @@ export class GeminiProvider implements AIProvider {
 
   async generateStructured<T>(messages: AIMessage[], options: StructuredOutputOptions): Promise<AIResult<T>> {
     validateMessages(messages);
-    const { model } = getConfig();
     const startedAt = Date.now();
-    const response = await sendRequest({ ...makeContents(messages), generationConfig: generationConfig(options) });
+    const request = await sendRequest({ ...makeContents(messages), generationConfig: generationConfig(options) });
+    const { response, model } = request;
     const result = await parseResponse(response);
     let output: T;
     try { output = JSON.parse(readText(result)) as T; } catch (error) {
@@ -246,8 +310,8 @@ export class GeminiProvider implements AIProvider {
 
   async *stream(messages: AIMessage[]): AsyncIterable<AIStreamEvent> {
     validateMessages(messages);
-    const { model } = getConfig();
-    const response = await sendRequest({ ...makeContents(messages), generationConfig: generationConfig() }, true);
+    const request = await sendRequest({ ...makeContents(messages), generationConfig: generationConfig() }, true);
+    const { response, model } = request;
     if (!response.body) throw new AIProviderError("AI_INVALID_RESPONSE", "Gemini returned an empty stream.");
 
     const reader = response.body.getReader();
