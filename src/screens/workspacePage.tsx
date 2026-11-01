@@ -7,7 +7,7 @@ import {
   ArrowRight, AlertCircle, BarChart3, Blocks, Bot, Check, CheckCircle2,
   ChevronDown, CircleCheck, Code2, Copy, CreditCard, ExternalLink, Eye,
   FileCode2, FolderKanban, GitFork, Grid2X2, Globe2, History, KeyRound,
-  LayoutTemplate, Menu, Monitor, MoreHorizontal, PanelLeftClose, Plug, Plus,
+  Download, LayoutTemplate, Menu, Monitor, MoreHorizontal, PanelLeftClose, Plug, Plus,
   Rocket, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Sparkles,
   TerminalSquare, Trash2, User, Users, WandSparkles, X, Zap,
 } from "lucide-react";
@@ -36,6 +36,7 @@ export function WorkspacePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const queuedPrompt = useRef<string | null>(null);
@@ -241,6 +242,37 @@ export function WorkspacePage() {
     }
   };
 
+  const exportProject = async () => {
+    if (isExporting || files.length === 0) return;
+    if (hasUnsavedChanges) {
+      setError("Save your current file changes before exporting the project.");
+      return;
+    }
+    setIsExporting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/projects/${projectId}/export`);
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error?.message || "Could not export this project.");
+      }
+      const archive = await response.blob();
+      const url = URL.createObjectURL(archive);
+      const downloadLink = document.createElement("a");
+      const projectSlug = (project?.name || "buildbox-project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      downloadLink.href = url;
+      downloadLink.download = `${projectSlug || "buildbox-project"}.zip`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Could not export this project.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const statusLabel: Record<string, string> = {
     PENDING: "Queued",
     PLANNING: "Planning application",
@@ -255,7 +287,12 @@ export function WorkspacePage() {
       <header>
         <div className="builder-brand"><button className="builder-back" onClick={() => navigate("/dashboard")} aria-label="Back to projects"><ArrowRight size={16} /></button><Logo /></div>
         <div className="workspace-name">{project?.name ?? "Loading project…"} <span>{isGenerating ? "Building" : hasUnsavedChanges ? "Unsaved changes" : "Saved"}</span></div>
-        <div><Button variant="secondary" onClick={() => setOverlay("history")}><History size={15} /> History</Button></div>
+        <div>
+          <Button variant="secondary" onClick={() => void exportProject()} disabled={isExporting || files.length === 0} aria-label="Export project as ZIP">
+            <Download size={15} /><span className="workspace-action-label">{isExporting ? "Exporting…" : "Export ZIP"}</span>
+          </Button>
+          <Button variant="secondary" onClick={() => setOverlay("history")}><History size={15} /><span className="workspace-action-label">History</span></Button>
+        </div>
       </header>
       <div className="builder-layout">
         <aside className="builder-sidebar">

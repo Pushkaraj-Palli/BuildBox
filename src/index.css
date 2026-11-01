@@ -522,6 +522,8 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 @media (max-width: 640px) {
   .builder-workspace > header { grid-template-columns: 1fr auto; padding-inline: 10px; }
   .builder-workspace > header .button { display: inline-flex !important; padding-inline: 8px; }
+  .builder-workspace > header > div:last-child .button { width: 32px; height: 30px; justify-content: center; padding-inline: 0; }
+  .workspace-action-label { display: none; }
   .builder-layout { height: auto; min-height: calc(100vh - 56px); grid-template-columns: 1fr; }
   .builder-sidebar { min-height: 260px; gap: 12px; padding: 16px; border-right: 0; border-bottom: 1px solid var(--border); }
   .builder-sidebar .workspace-composer { position: static; margin-top: 0; }
