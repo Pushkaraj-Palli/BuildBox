@@ -512,7 +512,13 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .builder-file-tree > p { padding: 0 6px; color: var(--muted-foreground); font-size: 10px; }
 .builder-editor { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .editor-file-title { min-height: 38px; display: flex; align-items: center; gap: 7px; padding: 0 12px; color: var(--muted-foreground); border-bottom: 1px solid var(--border); font-size: 10px; }
-.builder-editor textarea { width: 100%; min-height: 0; flex: 1; padding: 16px; resize: none; color: var(--foreground); border: 0; outline: 0; background: var(--card); font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
+.editor-language { margin-left: auto; color: var(--muted-foreground); font-size: 9px; text-transform: uppercase; }
+.code-editor-surface { position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; background: var(--card); }
+.code-editor-highlight, .code-editor-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 16px; overflow: auto; border: 0; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; white-space: pre; }
+.code-editor-highlight { z-index: 0; overflow: hidden; color: var(--foreground); pointer-events: none; }
+.code-editor-input { z-index: 1; resize: none; color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--foreground); outline: 0; background: transparent; }
+.code-editor-input::selection { color: transparent; -webkit-text-fill-color: transparent; background: rgb(99 102 241 / 35%); }
+.syntax-keyword { color: #c4b5fd; }.syntax-string { color: #86efac; }.syntax-number { color: #fbbf24; }.syntax-literal { color: #fb923c; }.syntax-comment { color: #737382; font-style: italic; }.syntax-function { color: #67e8f9; }.syntax-property { color: #93c5fd; }.syntax-tag { color: #f472b6; }.syntax-attribute { color: #a5b4fc; }.syntax-operator { color: #f0abfc; }.syntax-identifier, .syntax-punctuation, .syntax-text { color: var(--foreground); }
 @media (max-width: 640px) {
   .builder-workspace > header { grid-template-columns: 1fr auto; padding-inline: 10px; }
   .builder-workspace > header .button { display: inline-flex !important; padding-inline: 8px; }
@@ -522,7 +528,7 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
   .builder-main { min-height: 62vh; padding: 8px; }
   .builder-code-workspace { grid-template-columns: minmax(105px, 34%) minmax(0, 1fr); }
   .builder-file-tree { padding: 6px; }
-  .builder-editor textarea { padding: 10px; font-size: 10px; }
+  .code-editor-highlight, .code-editor-input { padding: 10px; font-size: 10px; }
   .editor-actions { gap: 6px; }
   .editor-actions .button { padding-inline: 8px; }
 }

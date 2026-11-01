@@ -12,6 +12,7 @@ import {
   TerminalSquare, Trash2, User, Users, WandSparkles, X, Zap,
 } from "lucide-react";
 import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp } from "../components/shared";
+import { CodeEditor } from "../components/CodeEditor";
 
 type WorkspaceProject = { id: string; name: string; description: string | null; framework: string | null };
 type WorkspaceFile = { id: string; path: string; content: string; language: string | null; version: number; updatedAt: string };
@@ -296,7 +297,7 @@ export function WorkspacePage() {
                 {files.length === 0 && <p>No files generated yet.</p>}
               </nav>
               <section className="builder-editor" aria-label="Code editor">
-                {selectedFile ? <><div className="editor-file-title"><FileCode2 size={14} /> {selectedFile.path}</div><textarea spellCheck={false} aria-label={`Edit ${selectedFile.path}`} value={editorContent} onChange={(event) => { setEditorContent(event.target.value); setSaveMessage(""); }} /></> : <div className="builder-empty"><Code2 size={24} /><p>Select a file to view its contents.</p></div>}
+                {selectedFile ? <><div className="editor-file-title"><FileCode2 size={14} /> {selectedFile.path}<span className="editor-language">{selectedFile.language || "text"}</span></div><CodeEditor key={selectedFile.id} filePath={selectedFile.path} value={editorContent} onChange={(content) => { setEditorContent(content); setSaveMessage(""); }} /></> : <div className="builder-empty"><Code2 size={24} /><p>Select a file to view its contents.</p></div>}
               </section>
             </div>
           )}
