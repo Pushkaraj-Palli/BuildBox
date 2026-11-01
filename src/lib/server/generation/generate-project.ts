@@ -3,6 +3,7 @@ import { recordAIUsage } from "@/lib/server/ai/usage";
 import { getPrisma } from "@/lib/server/prisma";
 import { createApplicationPlan } from "@/lib/server/planning/application-plan";
 import { generateProjectFiles } from "@/lib/server/generation/file-generator";
+import { validateAndRepairGeneratedProject } from "@/lib/server/generation/validation";
 
 type GenerateProjectInput = { projectId: string; userId: string; prompt: string };
 type RunGenerationInput = GenerateProjectInput & { generationJobId: string };
@@ -76,15 +77,21 @@ export async function generateProject({ projectId, userId, prompt, generationJob
       fileCount: planResult.output.files.length,
     });
 
-    const generated = await generateProjectFiles(planResult.output, (message, metadata) =>
+    const generatedResult = await generateProjectFiles(planResult.output, (message, metadata) =>
       addLog(job.id, "generation", "INFO", message, metadata));
-    for (const item of generated.usage) {
+    for (const item of generatedResult.usage) {
       await recordAIUsage({ ...item, output: "" }, { userId, projectId, generationJobId: job.id });
     }
 
     activeStage = "validation";
     await prisma.generationJob.update({ where: { id: job.id }, data: { status: "VALIDATING" } });
-    await addLog(job.id, "validation", "INFO", "Checking file paths, manifest entries, and project size.");
+    await addLog(job.id, "validation", "INFO", "Checking file paths, manifest entries, project size, syntax, imports, and JSON.");
+    const validation = await validateAndRepairGeneratedProject(generatedResult.files, generatedResult.dependencies, (message, metadata) =>
+      addLog(job.id, "validation", "INFO", message, metadata));
+    for (const item of validation.usage) {
+      await recordAIUsage({ ...item, output: "" }, { userId, projectId, generationJobId: job.id });
+    }
+    const generated = { ...generatedResult, files: validation.files };
 
     const snapshot = {
       files: generated.files.map(({ path, content, language }) => ({ path, content, language })),

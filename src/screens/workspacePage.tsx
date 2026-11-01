@@ -125,21 +125,68 @@ export function WorkspacePage() {
     }
   };
 
+  const runIteration = async (prompt: string) => {
+    const normalizedPrompt = prompt.trim();
+    if (!normalizedPrompt || isGenerating || files.length === 0) return;
+    setIsGenerating(true);
+    setError("");
+    setSaveMessage("");
+    setLastPrompt(normalizedPrompt);
+    setDraft("");
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/iterate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: normalizedPrompt }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "Project update failed.");
+      const generationId = result.data.id as string;
+      setGeneration({ id: generationId, status: result.data.status });
+
+      while (true) {
+        const statusResponse = await fetch(`/api/projects/${projectId}/generations/${generationId}`);
+        const statusResult = await statusResponse.json();
+        if (!statusResponse.ok) throw new Error(statusResult.error?.message || "Could not check project update status.");
+        const latest = statusResult.data as GenerationInfo & { logs?: Array<{ id: string; stage: string; level: string; message: string }> };
+        setGeneration(latest);
+        setGenerationLogs(latest.logs ?? []);
+        if (latest.status === "FAILED") throw new Error(latest.errorMessage || "Project update failed.");
+        if (latest.status === "COMPLETED") break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1800));
+      }
+
+      await loadWorkspace();
+      setActiveView("code");
+    } catch (iterationError) {
+      setError(iterationError instanceof Error ? iterationError.message : "Project update failed.");
+      setDraft(normalizedPrompt);
+      try { await loadWorkspace(); } catch { /* Keep the iteration error visible. */ }
+    } finally {
+      if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
+      statusPollTimer.current = null;
+      setIsGenerating(false);
+    }
+  };
+
   useEffect(() => {
     queuedPrompt.current = sessionStorage.getItem("buildbox-prompt");
     sessionStorage.removeItem("buildbox-prompt");
     const bootstrap = async () => {
       try {
         const data = await loadWorkspace();
-        if (data.files.length === 0 && ["PENDING", "PLANNING", "GENERATING", "VALIDATING"].includes(data.generation?.status ?? "")) {
+        if (["PENDING", "PLANNING", "GENERATING", "VALIDATING", "REPAIRING"].includes(data.generation?.status ?? "")) {
           setIsGenerating(true);
           statusPollTimer.current = window.setInterval(() => {
             void loadWorkspace().then((latest) => {
+              if (latest.generation?.id) void loadGenerationLogs(latest.generation.id);
               if (["COMPLETED", "FAILED"].includes(latest.generation?.status ?? "")) {
                 if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
                 statusPollTimer.current = null;
                 setIsGenerating(false);
                 if (latest.generation?.status === "COMPLETED") setFiles(latest.files);
+                if (latest.generation?.status === "FAILED") setError(latest.generation.errorMessage || "Project update failed.");
               }
             }).catch(() => undefined);
           }, 1800);
@@ -223,12 +270,13 @@ export function WorkspacePage() {
           ) : null}
           {generationLogs.length > 0 && <details className="builder-logs"><summary>Build steps</summary>{generationLogs.map((log) => <p key={log.id}><Check size={13} /> {log.message}</p>)}</details>}
           {error && <p className="builder-error" role="alert"><AlertCircle size={14} /> {error}</p>}
-          {files.length === 0 && !isLoading ? (
-            <form className="workspace-composer" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void runGeneration(draft); }}>
-              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Describe the app you want to build..." disabled={isGenerating} />
-              <button type="submit" aria-label="Generate project" disabled={isGenerating || draft.trim().length < 10}>{isGenerating ? <span className="pulse-dot" /> : <Send size={16} />}</button>
+          {!isLoading && (
+            <form className="workspace-composer" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void (files.length ? runIteration(draft) : runGeneration(draft)); }}>
+              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={files.length ? "Describe a change to this project..." : "Describe the app you want to build..."} disabled={isGenerating} />
+              <button type="submit" aria-label={files.length ? "Update project" : "Generate project"} disabled={isGenerating || draft.trim().length < (files.length ? 3 : 10)}>{isGenerating ? <span className="pulse-dot" /> : <Send size={16} />}</button>
             </form>
-          ) : files.length > 0 ? <p className="iteration-note">You can edit and save generated files here. AI changes to existing projects are coming in the next iteration phase.</p> : null}
+          )}
+          {files.length > 0 && <p className="iteration-note">Describe a change to update this project. BuildBox saves each successful update as a version.</p>}
         </aside>
         <main className="builder-main">
           <div className="builder-toolbar">
