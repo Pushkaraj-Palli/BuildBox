@@ -304,7 +304,12 @@ export function WorkspacePage() {
       </div>
       <AnimatePresence>
         {overlay && (
-          <WorkspaceOverlay type={overlay} close={() => setOverlay(null)} />
+          <WorkspaceOverlay
+            type={overlay}
+            projectId={projectId}
+            close={() => setOverlay(null)}
+            onRestored={async () => { await loadWorkspace(); setActiveView("code"); }}
+          />
         )}
       </AnimatePresence>
     </div>
@@ -313,12 +318,53 @@ export function WorkspacePage() {
 
 function WorkspaceOverlay({
   type,
+  projectId,
   close,
+  onRestored,
 }: {
   type: "deploy" | "share" | "history";
+  projectId: string;
   close: () => void;
+  onRestored: () => Promise<void>;
 }) {
   const drawer = type === "history";
+  const [versions, setVersions] = useState<Array<{ id: string; versionNumber: number; description: string | null; createdAt: string; files: string[] }>>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [versionError, setVersionError] = useState("");
+
+  useEffect(() => {
+    if (type !== "history") return;
+    const controller = new AbortController();
+    setIsLoadingVersions(true);
+    setVersionError("");
+    void fetch(`/api/projects/${projectId}/versions`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error?.message || "Could not load version history.");
+        setVersions(result.data);
+      })
+      .catch((error) => { if (!controller.signal.aborted) setVersionError(error instanceof Error ? error.message : "Could not load version history."); })
+      .finally(() => { if (!controller.signal.aborted) setIsLoadingVersions(false); });
+    return () => controller.abort();
+  }, [projectId, type]);
+
+  const restoreVersion = async (versionId: string) => {
+    if (restoringVersionId) return;
+    setRestoringVersionId(versionId);
+    setVersionError("");
+    try {
+      const response = await fetch(`/api/projects/${projectId}/versions/${versionId}/restore`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "Could not restore this version.");
+      await onRestored();
+      close();
+    } catch (error) {
+      setVersionError(error instanceof Error ? error.message : "Could not restore this version.");
+    } finally {
+      setRestoringVersionId(null);
+    }
+  };
   return (
     <>
       <motion.button
@@ -409,23 +455,24 @@ function WorkspaceOverlay({
         ) : (
           <>
             <h2>Version history</h2>
-            <p>Browse and restore previous versions.</p>
+            <p>Browse saved project snapshots and restore any version.</p>
+            {versionError && <p className="builder-error" role="alert">{versionError}</p>}
             <div className="version-list">
-              {[
-                "Added revenue chart",
-                "Refined dashboard layout",
-                "Initial generation",
-              ].map((x, i) => (
-                <div key={x}>
+              {isLoadingVersions ? <p>Loading saved versions…</p> : versions.length === 0 ? <p>No saved versions yet.</p> : versions.map((version) => (
+                <div key={version.id}>
                   <i />
                   <span>
-                    <b>{x}</b>
-                    <small>
-                      {i === 0 ? "12 minutes ago" : `${i + 1} hours ago`}
-                    </small>
-                    <p>“Make the analytics more focused and easier to scan.”</p>
+                    <b>Version {version.versionNumber}</b>
+                    <small>{new Date(version.createdAt).toLocaleString()}</small>
+                    <p>{version.description || "Project snapshot"}</p>
+                    <details>
+                      <summary>{version.files.length} files in this version</summary>
+                      <ul>{version.files.map((filePath) => <li key={filePath}>{filePath}</li>)}</ul>
+                    </details>
                   </span>
-                  <Button variant="secondary">Restore</Button>
+                  <Button variant="secondary" onClick={() => void restoreVersion(version.id)} disabled={restoringVersionId !== null}>
+                    {restoringVersionId === version.id ? "Restoring…" : "Restore"}
+                  </Button>
                 </div>
               ))}
             </div>

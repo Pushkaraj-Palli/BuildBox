@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { ApiError, errorResponse } from "@/lib/server/api-error";
+import { parseVersionSnapshot } from "@/lib/server/generation/version-snapshot";
 import { getPrisma } from "@/lib/server/prisma";
 
 export const runtime = "nodejs";
@@ -35,6 +36,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
         select: { id: true, path: true, content: true, language: true, version: true, updatedAt: true },
       });
       await transaction.project.update({ where: { id: projectId }, data: { updatedAt: new Date() } });
+      const currentFiles = await transaction.projectFile.findMany({
+        where: { projectId },
+        select: { path: true, content: true, language: true },
+        orderBy: { path: "asc" },
+      });
+      const snapshotFiles = parseVersionSnapshot({ files: currentFiles, framework: "nextjs" });
+      const latest = await transaction.projectVersion.findFirst({ where: { projectId }, orderBy: { versionNumber: "desc" }, select: { versionNumber: true } });
+      await transaction.projectVersion.create({
+        data: {
+          projectId,
+          versionNumber: (latest?.versionNumber ?? 0) + 1,
+          description: `Edited ${savedFile.path}`,
+          snapshot: { files: snapshotFiles, framework: "nextjs" },
+          createdBy: session.user.id,
+        },
+      });
       return savedFile;
     });
     return Response.json({ success: true, data: updated, requestId });
