@@ -486,6 +486,10 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .builder-logs summary { color: var(--muted-foreground); cursor: pointer; font-size: 10px; }
 .builder-logs p { display: flex; align-items: flex-start; gap: 6px; margin: 9px 0 0; color: var(--muted-foreground); font-size: 10px; line-height: 1.4; }
 .builder-logs p svg { flex: 0 0 auto; color: var(--success); }
+.builder-validation { max-height: 220px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.builder-validation summary { display: flex; align-items: flex-start; gap: 6px; cursor: pointer; color: var(--muted-foreground); font-size: 10px; line-height: 1.45; }
+.builder-validation.passed summary svg { flex: 0 0 auto; color: var(--success); }.builder-validation.failed summary svg { flex: 0 0 auto; color: var(--danger); }
+.builder-validation pre { max-height: 160px; margin: 9px 0 0; overflow: auto; color: var(--muted-foreground); white-space: pre-wrap; overflow-wrap: anywhere; font: 9px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .builder-error { display: flex; align-items: flex-start; gap: 7px; margin: 0; padding: 10px; color: #f87171; border: 1px solid color-mix(in srgb, #f87171 35%, var(--border)); border-radius: 7px; background: color-mix(in srgb, #f87171 7%, var(--card)); font-size: 10px; line-height: 1.45; }
 .builder-error svg { flex: 0 0 auto; margin-top: 1px; }
 .iteration-note { margin: auto 0 0; color: var(--muted-foreground); font-size: 10px; line-height: 1.5; }

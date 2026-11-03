@@ -37,6 +37,8 @@ export function WorkspacePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<{ status: "PASSED" | "FAILED"; message: string; output: string; durationMs: number } | null>(null);
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const queuedPrompt = useRef<string | null>(null);
@@ -273,6 +275,27 @@ export function WorkspacePage() {
     }
   };
 
+  const validateProjectBuild = async () => {
+    if (isValidating || isGenerating || files.length === 0) return;
+    if (hasUnsavedChanges) {
+      setError("Save your current file changes before running a build check.");
+      return;
+    }
+    setIsValidating(true);
+    setError("");
+    setValidationResult(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/validate`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "Could not validate this project.");
+      setValidationResult(result.data);
+    } catch (validationError) {
+      setError(validationError instanceof Error ? validationError.message : "Could not validate this project.");
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
   const statusLabel: Record<string, string> = {
     PENDING: "Queued",
     PLANNING: "Planning application",
@@ -291,6 +314,9 @@ export function WorkspacePage() {
           <Button variant="secondary" onClick={() => void exportProject()} disabled={isExporting || files.length === 0} aria-label="Export project as ZIP">
             <Download size={15} /><span className="workspace-action-label">{isExporting ? "Exporting…" : "Export ZIP"}</span>
           </Button>
+          <Button variant="secondary" onClick={() => void validateProjectBuild()} disabled={isValidating || isGenerating || files.length === 0} aria-label="Run isolated production build">
+            <CircleCheck size={15} /><span className="workspace-action-label">{isValidating ? "Building…" : "Validate build"}</span>
+          </Button>
           <Button variant="secondary" onClick={() => setOverlay("history")}><History size={15} /><span className="workspace-action-label">History</span></Button>
         </div>
       </header>
@@ -307,6 +333,11 @@ export function WorkspacePage() {
             <div className="builder-progress completed"><CheckCircle2 size={16} /><div><strong>Project files are ready</strong><small>{files.length} files saved to this project.</small></div></div>
           ) : null}
           {generationLogs.length > 0 && <details className="builder-logs"><summary>Build steps</summary>{generationLogs.map((log) => <p key={log.id}><Check size={13} /> {log.message}</p>)}</details>}
+          {isValidating && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Running isolated build</strong><small>Generated code is building inside a restricted Docker container.</small></div></div>}
+          {validationResult && <details className={`builder-validation ${validationResult.status === "PASSED" ? "passed" : "failed"}`} open>
+            <summary>{validationResult.status === "PASSED" ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />} {validationResult.message} ({(validationResult.durationMs / 1_000).toFixed(1)}s)</summary>
+            <pre>{validationResult.output || "No build output."}</pre>
+          </details>}
           {error && <p className="builder-error" role="alert"><AlertCircle size={14} /> {error}</p>}
           {!isLoading && (
             <form className="workspace-composer" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void (files.length ? runIteration(draft) : runGeneration(draft)); }}>

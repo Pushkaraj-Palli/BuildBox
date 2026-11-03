@@ -12,9 +12,10 @@ BuildBox is an AI-assisted web application builder. Describe an application, and
 - Browse project files in an editable, syntax-highlighted code editor
 - Save and restore project versions
 - Download a project as a ZIP archive
+- Run production build checks inside a resource-limited Docker container
 - Persist project files and history in PostgreSQL
 
-The workspace Preview tab is currently a placeholder; generated applications are not executed by BuildBox.
+The workspace Preview tab is currently a placeholder. Build checks run without network access in a restricted container and do not start a live preview.
 
 ## Tech stack
 
@@ -31,6 +32,7 @@ The workspace Preview tab is currently a placeholder; generated applications are
 - npm
 - A running PostgreSQL database
 - A Gemini API key for AI generation features
+- Docker Engine (Docker Desktop using Linux containers on Windows; required only for isolated build checks)
 
 ## Local setup
 
@@ -65,13 +67,19 @@ The workspace Preview tab is currently a placeholder; generated applications are
    npm run db:migrate:dev
    ```
 
-5. Start the development server:
+5. To enable isolated build checks, build the sandbox image while Docker Engine is running:
+
+   ```bash
+   npm run sandbox:build
+   ```
+
+6. Start the development server:
 
    ```bash
    npm run dev
    ```
 
-6. Open [http://localhost:3000](http://localhost:3000), create an account, and sign in.
+7. Open [http://localhost:3000](http://localhost:3000), create an account, and sign in.
 
 The seed command does not create sample users or projects:
 
@@ -90,6 +98,7 @@ npm run db:seed
 | `npm run db:validate` | Validate the Prisma schema |
 | `npm run db:migrate:dev` | Create or apply a development database migration |
 | `npm run db:seed` | Run the seed script (no sample data is added by default) |
+| `npm run sandbox:build` | Build the restricted Docker image used for generated-project build checks |
 
 ## Project structure
 
