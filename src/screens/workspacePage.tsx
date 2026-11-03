@@ -48,7 +48,7 @@ export function WorkspacePage() {
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? null;
   const hasUnsavedChanges = selectedFile !== null && selectedFile.content !== editorContent;
 
-  const loadWorkspace = async () => {
+  const loadWorkspace = async (refreshSelectedContent = false) => {
     const [projectResponse, filesResponse, generationsResponse] = await Promise.all([
       fetch(`/api/projects/${projectId}`),
       fetch(`/api/projects/${projectId}/files`),
@@ -71,7 +71,7 @@ export function WorkspacePage() {
         : filesResult.data[0].id;
       setSelectedFileId(currentId);
       const currentFile = filesResult.data.find((file: WorkspaceFile) => file.id === currentId);
-      if (currentFile && (!selectedFile || currentFile.id !== selectedFile.id)) setEditorContent(currentFile.content);
+      if (currentFile && (refreshSelectedContent || !selectedFile || currentFile.id !== selectedFile.id)) setEditorContent(currentFile.content);
     }
     return { project: projectResult.data as WorkspaceProject, files: filesResult.data as WorkspaceFile[], generation: latestGeneration as GenerationInfo | null };
   };
@@ -289,6 +289,9 @@ export function WorkspacePage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error?.message || "Could not validate this project.");
       setValidationResult(result.data);
+      if (Array.isArray(result.data.changedFiles) && result.data.changedFiles.length > 0) {
+        await loadWorkspace(true);
+      }
     } catch (validationError) {
       setError(validationError instanceof Error ? validationError.message : "Could not validate this project.");
     } finally {
@@ -333,7 +336,7 @@ export function WorkspacePage() {
             <div className="builder-progress completed"><CheckCircle2 size={16} /><div><strong>Project files are ready</strong><small>{files.length} files saved to this project.</small></div></div>
           ) : null}
           {generationLogs.length > 0 && <details className="builder-logs"><summary>Build steps</summary>{generationLogs.map((log) => <p key={log.id}><Check size={13} /> {log.message}</p>)}</details>}
-          {isValidating && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Running isolated build</strong><small>Generated code is building inside a restricted Docker container.</small></div></div>}
+          {isValidating && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Running isolated build</strong><small>If it fails, BuildBox can attempt up to three repairs and rebuilds.</small></div></div>}
           {validationResult && <details className={`builder-validation ${validationResult.status === "PASSED" ? "passed" : "failed"}`} open>
             <summary>{validationResult.status === "PASSED" ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />} {validationResult.message} ({(validationResult.durationMs / 1_000).toFixed(1)}s)</summary>
             <pre>{validationResult.output || "No build output."}</pre>

@@ -7,6 +7,7 @@ type LogContext = {
   stage?: string;
   projectId?: string;
   durationMs?: number;
+  attempt?: number;
 };
 
 function writeLog(level: "info" | "error", event: string, context: LogContext = {}) {

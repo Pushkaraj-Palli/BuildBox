@@ -7,9 +7,11 @@
     "prebuild": "prisma generate",
     "build": "next build",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "sandbox:build": "docker build -t buildbox-sandbox:local ./sandbox"
   },
