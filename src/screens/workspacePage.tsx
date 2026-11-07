@@ -5,8 +5,8 @@ import { useParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, AlertCircle, BarChart3, Blocks, Bot, Check, CheckCircle2,
-  ChevronDown, Code2, Copy, CreditCard, ExternalLink, Eye,
-  FileCode2, FolderKanban, GitFork, Grid2X2, Globe2, History, KeyRound,
+  ChevronDown, Code2, Copy, CreditCard, Eye,
+  FileCode2, FolderKanban, GitFork, Grid2X2, Globe2, History, KeyRound, Maximize2, Minimize2,
   Download, LayoutTemplate, Menu, Monitor, MoreHorizontal, PanelLeftClose, Plug, Plus,
   Rocket, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Sparkles,
   TerminalSquare, Trash2, User, Users, WandSparkles, X, Zap,
@@ -48,9 +48,28 @@ export function WorkspacePage() {
   const autoGenerationStarted = useRef(false);
   const autoValidationStarted = useRef(false);
   const statusPollTimer = useRef<number | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
 
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? null;
   const hasUnsavedChanges = selectedFile !== null && selectedFile.content !== editorContent;
+
+  useEffect(() => {
+    const syncFullscreenState = () => setIsPreviewFullscreen(document.fullscreenElement === previewFrameRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  const togglePreviewFullscreen = async () => {
+    const frame = previewFrameRef.current;
+    if (!frame) return;
+    try {
+      if (document.fullscreenElement === frame) await document.exitFullscreen();
+      else await frame.requestFullscreen();
+    } catch (fullscreenError) {
+      setPreviewError(fullscreenError instanceof Error ? fullscreenError.message : "Could not open the preview fullscreen.");
+    }
+  };
 
   const loadWorkspace = async (refreshSelectedContent = false) => {
     const [projectResponse, filesResponse, generationsResponse] = await Promise.all([
@@ -386,10 +405,15 @@ export function WorkspacePage() {
               <button className={activeView === "preview" ? "active" : ""} onClick={() => setActiveView("preview")}><Eye size={14} /> Preview</button>
               <button className={activeView === "code" ? "active" : ""} onClick={() => setActiveView("code")}><Code2 size={14} /> Code</button>
             </div>
+            {activeView === "preview" && <div className="preview-actions">
+              <button className="icon-button" onClick={togglePreviewFullscreen} disabled={!previewUrl} aria-label={isPreviewFullscreen ? "Exit fullscreen preview" : "Open fullscreen preview"} title={isPreviewFullscreen ? "Exit fullscreen" : "Full screen"}>
+                {isPreviewFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+            </div>}
             {activeView === "code" && <div className="editor-actions"><span>{saveMessage || (hasUnsavedChanges ? "Unsaved changes" : selectedFile ? `v${selectedFile.version}` : "")}</span><Button variant="secondary" onClick={() => void saveSelectedFile()} disabled={!hasUnsavedChanges || isSaving}>{isSaving ? "Saving..." : "Save file"}</Button></div>}
           </div>
           {isLoading ? <div className="builder-empty"><span className="pulse-dot" /> Loading project…</div> : activeView === "preview" ? (
-            previewUrl ? <iframe className="builder-live-preview" title={`${project?.name ?? "Project"} live preview`} src={previewUrl} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" /> : (
+            previewUrl ? <iframe ref={previewFrameRef} className="builder-live-preview" title={`${project?.name ?? "Project"} live preview`} src={previewUrl} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" /> : (
               <div className="builder-empty"><Monitor size={28} /><h2>{isGenerating ? "Generating your app" : isValidating ? "Checking your app" : isStartingPreview ? "Starting live preview" : files.length ? "Preparing your preview" : "Your preview will appear here"}</h2><p>{previewError || (files.length ? "BuildBox validates the generated project and starts its preview automatically." : "Describe your idea in the panel to start generating project files.")}</p></div>
             )
           ) : (

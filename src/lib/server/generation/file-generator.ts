@@ -1,7 +1,7 @@
 import { AIProviderError, type AIResult, type JSONSchema } from "@/lib/server/ai/types";
 import { getAIProvider } from "@/lib/server/ai";
 import type { ApplicationPlan } from "@/lib/server/planning/application-plan";
-import { GENERATION_LIMITS, PROJECT_TEMPLATE, createPackageManifest, createPostCssConfig, createTailwindConfig, createTypeScriptConfig, validateProjectDependencies } from "@/lib/server/generation/template";
+import { GENERATION_LIMITS, PROJECT_TEMPLATE, createNextConfig, createPackageManifest, createPostCssConfig, createTailwindConfig, createTypeScriptConfig, validateProjectDependencies } from "@/lib/server/generation/template";
 
 export type GeneratedFile = { path: string; content: string; language: string };
 
@@ -79,14 +79,14 @@ function validateBatch(value: unknown, expectedPaths: string[]): Array<{ path: s
 type GenerationProgress = (message: string, metadata?: Record<string, string | number | string[]>) => Promise<void>;
 
 export async function generateProjectFiles(plan: ApplicationPlan, onProgress?: GenerationProgress) {
-  if (plan.files.length + 4 > GENERATION_LIMITS.maxFiles) {
+  if (plan.files.length + 5 > GENERATION_LIMITS.maxFiles) {
     throw new AIProviderError("GENERATION_LIMIT_EXCEEDED", "The project file manifest exceeds the current limit.", 400);
   }
   const dependencies = validateProjectDependencies(plan.dependencies.map(({ name }) => name));
   const manifest = plan.files.map(({ path, purpose, language }) => ({ path, purpose, language }));
   const manifestPaths = new Set(manifest.map(({ path }) => path));
   if (manifestPaths.size !== manifest.length) throw new AIProviderError("AI_INVALID_PLAN", "The project plan contains duplicate file paths.", 400);
-  for (const protectedPath of ["package.json", "tsconfig.json", "postcss.config.js", "postcss.config.cjs", "postcss.config.mjs", "tailwind.config.js", "tailwind.config.cjs", "tailwind.config.mjs", "tailwind.config.ts", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"])
+  for (const protectedPath of ["package.json", "tsconfig.json", "next.config.js", "next.config.cjs", "next.config.mjs", "next.config.ts", "postcss.config.js", "postcss.config.cjs", "postcss.config.mjs", "tailwind.config.js", "tailwind.config.cjs", "tailwind.config.mjs", "tailwind.config.ts", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"])
     if (manifestPaths.has(protectedPath)) throw new AIProviderError("AI_INVALID_PLAN", "The plan cannot replace controlled package files.", 400);
   for (const requiredFile of PROJECT_TEMPLATE.requiredFiles) {
     if (!manifestPaths.has(requiredFile)) throw new AIProviderError("AI_INVALID_PLAN", "The project plan is missing a required Next.js file.", 400);
@@ -196,6 +196,7 @@ export async function generateProjectFiles(plan: ApplicationPlan, onProgress?: G
   generated.push({ path: "tsconfig.json", content: JSON.stringify(createTypeScriptConfig(), null, 2), language: "json" });
   generated.push({ path: "postcss.config.mjs", content: createPostCssConfig(), language: "javascript" });
   generated.push({ path: "tailwind.config.ts", content: createTailwindConfig(), language: "typescript" });
+  generated.push({ path: "next.config.ts", content: createNextConfig(), language: "typescript" });
 
   const totalBytes = generated.reduce((size, file) => size + Buffer.byteLength(file.content, "utf8"), 0);
   if (totalBytes > GENERATION_LIMITS.maxProjectBytes) {

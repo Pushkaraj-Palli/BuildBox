@@ -23,7 +23,7 @@ export const PROJECT_TEMPLATE = {
 } as const;
 
 export const GENERATION_LIMITS = {
-  maxFiles: 34,
+  maxFiles: 35,
   maxFileBytes: 200_000,
   maxProjectBytes: 1_000_000,
   filesPerRequest: 2,
@@ -84,6 +84,10 @@ export function createTailwindConfig() {
   return `import type { Config } from "tailwindcss";\n\nconst config: Config = {\n  content: [\n    "./app/**/*.{js,ts,jsx,tsx,mdx}",\n    "./pages/**/*.{js,ts,jsx,tsx,mdx}",\n    "./components/**/*.{js,ts,jsx,tsx,mdx}",\n    "./src/**/*.{js,ts,jsx,tsx,mdx}",\n  ],\n  theme: { extend: {} },\n  plugins: [],\n};\n\nexport default config;\n`;
 }
 
+export function createNextConfig() {
+  return `import type { NextConfig } from "next";\n\nconst nextConfig: NextConfig = { devIndicators: false };\n\nexport default nextConfig;\n`;
+}
+
 const TAILWIND_LAYERS = ["@tailwind base;", "@tailwind components;", "@tailwind utilities;"];
 
 /** Supplies Tailwind's controlled build setup to new and legacy project snapshots. */
@@ -111,6 +115,9 @@ export function ensureTailwindProjectSetup<T extends { path: string; content: st
   }
   if (!result.some((file) => file.path === "tailwind.config.ts")) {
     result.push({ path: "tailwind.config.ts", content: createTailwindConfig(), language: "typescript" } as T);
+  }
+  if (!result.some((file) => /^next\.config\.(?:js|mjs|cjs|ts)$/.test(file.path))) {
+    result.push({ path: "next.config.ts", content: createNextConfig(), language: "typescript" } as T);
   }
 
   const globalCss = result.find((file) => file.path === "app/globals.css");
