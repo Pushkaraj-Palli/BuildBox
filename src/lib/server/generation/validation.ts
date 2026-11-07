@@ -3,7 +3,7 @@ import path from "node:path";
 import * as ts from "typescript";
 import { AIProviderError, type AIResult, type JSONSchema } from "@/lib/server/ai/types";
 import { getAIProvider } from "@/lib/server/ai";
-import { GENERATION_LIMITS, PROJECT_TEMPLATE } from "@/lib/server/generation/template";
+import { ensureTailwindProjectSetup, GENERATION_LIMITS, PROJECT_TEMPLATE } from "@/lib/server/generation/template";
 import { applyRequiredClientDirectives } from "@/lib/server/generation/client-directives";
 import type { GeneratedFile } from "@/lib/server/generation/file-generator";
 
@@ -190,7 +190,8 @@ export async function validateAndRepairGeneratedProject(
   dependencies: string[],
   onProgress?: ValidationProgress,
 ): Promise<{ files: GeneratedFile[]; usage: Array<{ provider: string; model: string; usage: AIResult["usage"]; durationMs: number }> }> {
-  const clientDirectiveResult = applyRequiredClientDirectives(files);
+  const tailwindReadyFiles = ensureTailwindProjectSetup(files);
+  const clientDirectiveResult = applyRequiredClientDirectives(tailwindReadyFiles);
   const workingFiles = clientDirectiveResult.files;
   if (clientDirectiveResult.changedPaths.length) {
     await onProgress?.(`Added the required client directive to ${clientDirectiveResult.changedPaths.length} React file${clientDirectiveResult.changedPaths.length === 1 ? "" : "s"} using client hooks.`, {

@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseVersionSnapshot } from "@/lib/server/generation/version-snapshot";
 import type { VersionSnapshotFile } from "@/lib/server/generation/version-snapshot";
-import { createTypeScriptConfig } from "@/lib/server/generation/template";
+import { createTypeScriptConfig, ensureTailwindProjectSetup } from "@/lib/server/generation/template";
 
 const BUILD_TIMEOUT_MS = 120_000;
 const CLEANUP_TIMEOUT_MS = 10_000;
@@ -90,7 +90,7 @@ function dockerPermissionDenied(output: string): boolean {
 }
 
 export async function runSandboxBuild(projectFiles: unknown) {
-  const files = parseVersionSnapshot({ files: projectFiles, framework: "nextjs" });
+  const files = ensureTailwindProjectSetup(parseVersionSnapshot({ files: projectFiles, framework: "nextjs" }));
   const image = imageName();
   const sourceDirectory = await mkdtemp(path.join(tmpdir(), "buildbox-sandbox-"));
   const containerName = `buildbox-validate-${randomUUID()}`;

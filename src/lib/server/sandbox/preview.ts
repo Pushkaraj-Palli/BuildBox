@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseVersionSnapshot, type VersionSnapshotFile } from "@/lib/server/generation/version-snapshot";
-import { createTypeScriptConfig } from "@/lib/server/generation/template";
+import { createTypeScriptConfig, ensureTailwindProjectSetup } from "@/lib/server/generation/template";
 import { logger } from "@/lib/server/logger";
 import { SandboxError } from "@/lib/server/sandbox/run-build";
 
@@ -95,7 +95,7 @@ export function getProjectPreview(projectId: string) {
 
 export async function startProjectPreview(projectId: string, projectFiles: unknown) {
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(projectId)) throw new SandboxError("PREVIEW_INVALID_PROJECT", "Invalid project identifier.", 400);
-  const files = parseVersionSnapshot({ files: projectFiles, framework: "nextjs" });
+  const files = ensureTailwindProjectSetup(parseVersionSnapshot({ files: projectFiles, framework: "nextjs" }));
   const previewStartedAt = Date.now();
   await stopProjectPreview(projectId);
   const sourceDirectory = await mkdtemp(path.join(tmpdir(), "buildbox-preview-"));
