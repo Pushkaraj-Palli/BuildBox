@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { ApiError, errorResponse } from "@/lib/server/api-error";
 import { logger } from "@/lib/server/logger";
 import { getPrisma } from "@/lib/server/prisma";
+import { stopProjectPreview } from "@/lib/server/sandbox/preview";
 
 export const runtime = "nodejs";
 
@@ -78,6 +79,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     const { projectId } = await params;
     await getOwnedProject(projectId, session.user.id);
     await getPrisma().project.update({ where: { id: projectId }, data: { status: "DELETED" } });
+    await stopProjectPreview(projectId);
     logger.info("projects.deleted", { requestId });
     return new Response(null, { status: 204 });
   } catch (error) {

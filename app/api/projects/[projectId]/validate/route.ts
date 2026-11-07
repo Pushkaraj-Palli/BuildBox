@@ -165,7 +165,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ pr
         data: {
           ...currentBuild,
           status: "FAILED" as const,
-          message: "The project passed after automatic repair, but the repair could not be saved because the project changed during validation. Run Validate build again.",
+          message: "The project passed after automatic repair, but the repair could not be saved because the project changed during validation. Submit a project change to retry.",
           durationMs: totalDurationMs,
           output: combineOutput(...outputSections),
         },

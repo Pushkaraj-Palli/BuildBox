@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, AlertCircle, BarChart3, Blocks, Bot, Check, CheckCircle2,
-  ChevronDown, CircleCheck, Code2, Copy, CreditCard, ExternalLink, Eye,
+  ChevronDown, Code2, Copy, CreditCard, ExternalLink, Eye,
   FileCode2, FolderKanban, GitFork, Grid2X2, Globe2, History, KeyRound,
   Download, LayoutTemplate, Menu, Monitor, MoreHorizontal, PanelLeftClose, Plug, Plus,
   Rocket, Search, Send, Settings, ShieldCheck, SlidersHorizontal, Sparkles,
@@ -39,10 +39,14 @@ export function WorkspacePage() {
   const [isExporting, setIsExporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<{ status: "PASSED" | "FAILED"; message: string; output: string; durationMs: number } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isStartingPreview, setIsStartingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const queuedPrompt = useRef<string | null>(null);
   const autoGenerationStarted = useRef(false);
+  const autoValidationStarted = useRef(false);
   const statusPollTimer = useRef<number | null>(null);
 
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? null;
@@ -82,9 +86,45 @@ export function WorkspacePage() {
     if (response.ok) setGenerationLogs(result.data.logs);
   };
 
+  const validateAndStartPreview = async () => {
+    if (autoValidationStarted.current) return;
+    autoValidationStarted.current = true;
+    setActiveView("preview");
+    setPreviewUrl(null);
+    setIsValidating(true);
+    setIsStartingPreview(false);
+    setError("");
+    setPreviewError("");
+    setValidationResult(null);
+    try {
+      const validationResponse = await fetch(`/api/projects/${projectId}/validate`, { method: "POST" });
+      const validation = await validationResponse.json();
+      if (!validationResponse.ok) throw new Error(validation.error?.message || "Could not validate this project.");
+      setValidationResult(validation.data);
+      if (Array.isArray(validation.data.changedFiles) && validation.data.changedFiles.length > 0) await loadWorkspace(true);
+      if (validation.data.status !== "PASSED") {
+        setPreviewError("The build did not pass after automatic repair. Review the build output, then make a change and try again.");
+        return;
+      }
+
+      setIsStartingPreview(true);
+      const previewResponse = await fetch(`/api/projects/${projectId}/preview`, { method: "POST" });
+      const preview = await previewResponse.json();
+      if (!previewResponse.ok) throw new Error(preview.error?.message || "Could not start the live preview.");
+      setPreviewUrl(preview.data.url);
+      setActiveView("preview");
+    } catch (validationError) {
+      setPreviewError(validationError instanceof Error ? validationError.message : "Could not prepare the live preview.");
+    } finally {
+      setIsValidating(false);
+      setIsStartingPreview(false);
+    }
+  };
+
   const runGeneration = async (prompt: string) => {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || isGenerating) return;
+    autoValidationStarted.current = false;
     setIsGenerating(true);
     setError("");
     setSaveMessage("");
@@ -117,7 +157,7 @@ export function WorkspacePage() {
       }
 
       await loadWorkspace();
-      setActiveView("code");
+      await validateAndStartPreview();
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : "Project generation failed.");
       setDraft(normalizedPrompt);
@@ -132,6 +172,7 @@ export function WorkspacePage() {
   const runIteration = async (prompt: string) => {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || isGenerating || files.length === 0) return;
+    autoValidationStarted.current = false;
     setIsGenerating(true);
     setError("");
     setSaveMessage("");
@@ -162,7 +203,7 @@ export function WorkspacePage() {
       }
 
       await loadWorkspace();
-      setActiveView("code");
+      await validateAndStartPreview();
     } catch (iterationError) {
       setError(iterationError instanceof Error ? iterationError.message : "Project update failed.");
       setDraft(normalizedPrompt);
@@ -189,7 +230,10 @@ export function WorkspacePage() {
                 if (statusPollTimer.current !== null) window.clearInterval(statusPollTimer.current);
                 statusPollTimer.current = null;
                 setIsGenerating(false);
-                if (latest.generation?.status === "COMPLETED") setFiles(latest.files);
+                if (latest.generation?.status === "COMPLETED") {
+                  setFiles(latest.files);
+                  void validateAndStartPreview();
+                }
                 if (latest.generation?.status === "FAILED") setError(latest.generation.errorMessage || "Project update failed.");
               }
             }).catch(() => undefined);
@@ -205,6 +249,16 @@ export function WorkspacePage() {
           autoGenerationStarted.current = true;
           setDraft(prompt);
           void runGeneration(prompt);
+          return;
+        }
+        if (data.files.length > 0 && data.generation?.status === "COMPLETED" && !autoValidationStarted.current) {
+          const previewResponse = await fetch(`/api/projects/${projectId}/preview`);
+          const previewResult = await previewResponse.json();
+          if (previewResponse.ok && previewResult.data?.url) {
+            setPreviewUrl(previewResult.data.url);
+          } else {
+            await validateAndStartPreview();
+          }
         }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load this project.");
@@ -237,6 +291,8 @@ export function WorkspacePage() {
       setFiles((current) => current.map((file) => file.id === result.data.id ? result.data : file));
       setEditorContent(result.data.content);
       setSaveMessage("Saved");
+      autoValidationStarted.current = false;
+      await validateAndStartPreview();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save this file.");
     } finally {
@@ -275,30 +331,6 @@ export function WorkspacePage() {
     }
   };
 
-  const validateProjectBuild = async () => {
-    if (isValidating || isGenerating || files.length === 0) return;
-    if (hasUnsavedChanges) {
-      setError("Save your current file changes before running a build check.");
-      return;
-    }
-    setIsValidating(true);
-    setError("");
-    setValidationResult(null);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/validate`, { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message || "Could not validate this project.");
-      setValidationResult(result.data);
-      if (Array.isArray(result.data.changedFiles) && result.data.changedFiles.length > 0) {
-        await loadWorkspace(true);
-      }
-    } catch (validationError) {
-      setError(validationError instanceof Error ? validationError.message : "Could not validate this project.");
-    } finally {
-      setIsValidating(false);
-    }
-  };
-
   const statusLabel: Record<string, string> = {
     PENDING: "Queued",
     PLANNING: "Planning application",
@@ -317,9 +349,6 @@ export function WorkspacePage() {
           <Button variant="secondary" onClick={() => void exportProject()} disabled={isExporting || files.length === 0} aria-label="Export project as ZIP">
             <Download size={15} /><span className="workspace-action-label">{isExporting ? "Exporting…" : "Export ZIP"}</span>
           </Button>
-          <Button variant="secondary" onClick={() => void validateProjectBuild()} disabled={isValidating || isGenerating || files.length === 0} aria-label="Run isolated production build">
-            <CircleCheck size={15} /><span className="workspace-action-label">{isValidating ? "Building…" : "Validate build"}</span>
-          </Button>
           <Button variant="secondary" onClick={() => setOverlay("history")}><History size={15} /><span className="workspace-action-label">History</span></Button>
         </div>
       </header>
@@ -336,7 +365,8 @@ export function WorkspacePage() {
             <div className="builder-progress completed"><CheckCircle2 size={16} /><div><strong>Project files are ready</strong><small>{files.length} files saved to this project.</small></div></div>
           ) : null}
           {generationLogs.length > 0 && <details className="builder-logs"><summary>Build steps</summary>{generationLogs.map((log) => <p key={log.id}><Check size={13} /> {log.message}</p>)}</details>}
-          {isValidating && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Running isolated build</strong><small>If it fails, BuildBox can attempt up to three repairs and rebuilds.</small></div></div>}
+          {isValidating && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Checking your app automatically</strong><small>If the build fails, BuildBox attempts automatic repairs before starting the preview.</small></div></div>}
+          {isStartingPreview && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Starting live preview</strong><small>Preparing an isolated preview container.</small></div></div>}
           {validationResult && <details className={`builder-validation ${validationResult.status === "PASSED" ? "passed" : "failed"}`} open>
             <summary>{validationResult.status === "PASSED" ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />} {validationResult.message} ({(validationResult.durationMs / 1_000).toFixed(1)}s)</summary>
             <pre>{validationResult.output || "No build output."}</pre>
@@ -359,7 +389,9 @@ export function WorkspacePage() {
             {activeView === "code" && <div className="editor-actions"><span>{saveMessage || (hasUnsavedChanges ? "Unsaved changes" : selectedFile ? `v${selectedFile.version}` : "")}</span><Button variant="secondary" onClick={() => void saveSelectedFile()} disabled={!hasUnsavedChanges || isSaving}>{isSaving ? "Saving..." : "Save file"}</Button></div>}
           </div>
           {isLoading ? <div className="builder-empty"><span className="pulse-dot" /> Loading project…</div> : activeView === "preview" ? (
-            <div className="builder-empty"><Monitor size={28} /><h2>{files.length ? "Preview is the next step" : isGenerating ? "Generating your app" : "Your preview will appear here"}</h2><p>{files.length ? "Your source files are saved. Live preview will be added in the next roadmap phase." : "Describe your idea in the panel to start generating project files."}</p></div>
+            previewUrl ? <iframe className="builder-live-preview" title={`${project?.name ?? "Project"} live preview`} src={previewUrl} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" /> : (
+              <div className="builder-empty"><Monitor size={28} /><h2>{isGenerating ? "Generating your app" : isValidating ? "Checking your app" : isStartingPreview ? "Starting live preview" : files.length ? "Preparing your preview" : "Your preview will appear here"}</h2><p>{previewError || (files.length ? "BuildBox validates the generated project and starts its preview automatically." : "Describe your idea in the panel to start generating project files.")}</p></div>
+            )
           ) : (
             <div className="builder-code-workspace">
               <nav className="builder-file-tree" aria-label="Project files">

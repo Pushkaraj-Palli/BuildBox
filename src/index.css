@@ -505,6 +505,7 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .builder-empty > svg { color: var(--muted-foreground); }
 .builder-empty h2 { margin: 0; color: var(--foreground); font-size: 14px; }
 .builder-empty p { max-width: 440px; margin: 0; font-size: 11px; line-height: 1.6; }
+.builder-live-preview { width: 100%; min-height: 0; flex: 1; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .builder-code-workspace { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(160px, 230px) minmax(0, 1fr); overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
 .builder-file-tree { min-width: 0; overflow: auto; padding: 10px; border-right: 1px solid var(--border); }
 .file-tree-heading { display: flex; align-items: center; gap: 7px; padding: 5px 6px 10px; color: var(--muted-foreground); font-size: 10px; font-weight: 600; }
