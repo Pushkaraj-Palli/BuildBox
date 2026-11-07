@@ -31,7 +31,8 @@
   --shadow: 0 16px 48px rgba(24, 24, 27, 0.08);
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { display: none; width: 0; height: 0; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--background); color: var(--foreground); font: 14px/1.55 "Geist", sans-serif; -webkit-font-smoothing: antialiased; }
 button, textarea, input { font: inherit; }
@@ -475,6 +476,21 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .builder-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: 320px minmax(0, 1fr); }
 .builder-sidebar { min-width: 0; position: relative; display: flex; flex-direction: column; gap: 16px; padding: 20px; border-right: 1px solid var(--border); background: var(--background); }
 .builder-sidebar h2 { margin: 2px 0 0; font-size: 14px; }
+.terminal-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+.terminal-toggle-row button { padding: 6px 9px; color: var(--foreground); border: 1px solid var(--border); border-radius: 6px; background: var(--card); cursor: pointer; font: inherit; font-size: 10px; }
+.terminal-toggle-row button:hover { background: var(--muted); }
+.builder-preview-terminal { min-height: 0; flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.builder-preview-terminal .build-terminal { min-height: 120px; height: min(26vh, 230px); flex: 0 1 auto; }
+.build-terminal { min-width: 0; min-height: 140px; flex: 1; display: flex; flex-direction: column; overflow: hidden; color: #d4d4d8; border: 1px solid #30343b; border-radius: 8px; background: #101216; box-shadow: 0 8px 24px #0002; }
+.build-terminal-header { min-height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 10px; color: #a1a1aa; border-bottom: 1px solid #292d33; background: #191c21; font-size: 9px; }
+.build-terminal-header strong { color: #d4d4d8; font-weight: 500; }
+.build-terminal-lights { display: flex; gap: 4px; }
+.build-terminal-lights i { width: 7px; height: 7px; border-radius: 50%; background: #f87171; }
+.build-terminal-lights i:nth-child(2) { background: #fbbf24; }.build-terminal-lights i:nth-child(3) { background: #4ade80; }
+.build-terminal-status { margin-left: auto; color: #a1a1aa; font-size: 8px; letter-spacing: .06em; }
+.build-terminal-status.running { color: #fbbf24; }.build-terminal-status.passed { color: #4ade80; }.build-terminal-status.failed { color: #f87171; }
+.build-terminal-output { min-height: 0; flex: 1; margin: 0; padding: 12px; overflow: auto; color: #c4f1d1; white-space: pre-wrap; overflow-wrap: anywhere; font: 9px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.build-terminal-footer { min-height: 22px; display: flex; align-items: center; justify-content: space-between; padding: 0 9px; color: #737981; border-top: 1px solid #292d33; background: #191c21; font: 7px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em; }
 .builder-sidebar .user-message { align-self: flex-end; max-width: 90%; margin: 0; padding: 11px 13px; border: 1px solid var(--border); border-radius: 9px 9px 2px 9px; background: var(--card); font-size: 11px; line-height: 1.55; }
 .builder-progress { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
 .builder-progress > div { min-width: 0; display: grid; gap: 5px; }
@@ -507,7 +523,7 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .builder-empty > svg { color: var(--muted-foreground); }
 .builder-empty h2 { margin: 0; color: var(--foreground); font-size: 14px; }
 .builder-empty p { max-width: 440px; margin: 0; font-size: 11px; line-height: 1.6; }
-.builder-live-preview { width: 100%; min-height: 0; flex: 1; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.builder-live-preview { width: 100%; min-height: 160px; flex: 1; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .builder-live-preview:fullscreen { width: 100vw; height: 100vh; border: 0; border-radius: 0; background: #fff; }
 .builder-code-workspace { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(160px, 230px) minmax(0, 1fr); overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
 .builder-file-tree { min-width: 0; overflow: auto; padding: 10px; border-right: 1px solid var(--border); }

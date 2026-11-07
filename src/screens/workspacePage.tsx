@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp } from "../components/shared";
 import { CodeEditor } from "../components/CodeEditor";
+import { BuildTerminal } from "../components/BuildTerminal";
 
 type WorkspaceProject = { id: string; name: string; description: string | null; framework: string | null };
 type WorkspaceFile = { id: string; path: string; content: string; language: string | null; version: number; updatedAt: string };
@@ -42,6 +43,7 @@ export function WorkspacePage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isStartingPreview, setIsStartingPreview] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [showTerminal, setShowTerminal] = useState(true);
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const queuedPrompt = useRef<string | null>(null);
@@ -53,6 +55,23 @@ export function WorkspacePage() {
 
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? null;
   const hasUnsavedChanges = selectedFile !== null && selectedFile.content !== editorContent;
+  const terminalStatus = isGenerating || isValidating || isStartingPreview
+    ? "RUNNING"
+    : previewError || (validationResult?.status === "FAILED" || generation?.status === "FAILED")
+      ? "FAILED"
+      : validationResult?.status === "PASSED"
+        ? "PASSED"
+        : "IDLE";
+  const terminalOutput = [
+    lastPrompt ? `$ ${lastPrompt}` : "BuildBox project build terminal",
+    ...generationLogs.map((log) => `[${log.stage}] ${log.message}`),
+    isGenerating ? `\n[${generation?.status ?? "BUILDING"}] ${generationLogs.at(-1)?.message || "Generating project files…"}` : "",
+    isValidating ? "\n[VALIDATING] Running isolated production build and automatic repairs…" : "",
+    isStartingPreview ? "\n[PREVIEW] Starting isolated live preview…" : "",
+    validationResult ? `\n${validationResult.message}\n${validationResult.output || "No build output."}` : "",
+    previewError ? `\n[Preview error] ${previewError}` : "",
+    error ? `\n[Error] ${error}` : "",
+  ].filter(Boolean).join("\n").replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
 
   useEffect(() => {
     const syncFullscreenState = () => setIsPreviewFullscreen(document.fullscreenElement === previewFrameRef.current);
@@ -350,15 +369,6 @@ export function WorkspacePage() {
     }
   };
 
-  const statusLabel: Record<string, string> = {
-    PENDING: "Queued",
-    PLANNING: "Planning application",
-    GENERATING: "Generating files",
-    VALIDATING: "Checking project files",
-    COMPLETED: "Files saved",
-    FAILED: "Generation failed",
-  };
-
   return (
     <div className="workspace-page builder-workspace">
       <header>
@@ -375,21 +385,11 @@ export function WorkspacePage() {
         <aside className="builder-sidebar">
           <h2>Build with BuildBox</h2>
           {lastPrompt && <div className="message user-message">{lastPrompt}</div>}
-          {isGenerating ? (
-            <div className="builder-progress" role="status" aria-live="polite">
-              <span className="pulse-dot" />
-              <div><strong>{statusLabel[generation?.status ?? "PENDING"] || "Preparing your project"}</strong><small>{generationLogs.at(-1)?.message || "BuildBox is working through your project plan."}</small></div>
-            </div>
-          ) : generation?.status === "COMPLETED" ? (
-            <div className="builder-progress completed"><CheckCircle2 size={16} /><div><strong>Project files are ready</strong><small>{files.length} files saved to this project.</small></div></div>
-          ) : null}
-          {generationLogs.length > 0 && <details className="builder-logs"><summary>Build steps</summary>{generationLogs.map((log) => <p key={log.id}><Check size={13} /> {log.message}</p>)}</details>}
-          {isValidating && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Checking your app automatically</strong><small>If the build fails, BuildBox attempts automatic repairs before starting the preview.</small></div></div>}
-          {isStartingPreview && <div className="builder-progress" role="status"><span className="pulse-dot" /><div><strong>Starting live preview</strong><small>Preparing an isolated preview container.</small></div></div>}
-          {validationResult && <details className={`builder-validation ${validationResult.status === "PASSED" ? "passed" : "failed"}`} open>
-            <summary>{validationResult.status === "PASSED" ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />} {validationResult.message} ({(validationResult.durationMs / 1_000).toFixed(1)}s)</summary>
-            <pre>{validationResult.output || "No build output."}</pre>
-          </details>}
+          {(isGenerating || isValidating || isStartingPreview) && <div className="builder-progress" role="status" aria-live="polite">
+            <span className="pulse-dot" />
+            <div><strong>{isGenerating ? generation?.status ?? "Generating" : isValidating ? "Checking project" : "Starting preview"}</strong><small>{generationLogs.at(-1)?.message || "BuildBox is preparing your application."}</small></div>
+          </div>}
+          {!isGenerating && generation?.status === "COMPLETED" && <div className="builder-progress completed"><CheckCircle2 size={16} /><div><strong>Project files are ready</strong><small>{files.length} files saved to this project.</small></div></div>}
           {error && <p className="builder-error" role="alert"><AlertCircle size={14} /> {error}</p>}
           {!isLoading && (
             <form className="workspace-composer" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void (files.length ? runIteration(draft) : runGeneration(draft)); }}>
@@ -428,6 +428,15 @@ export function WorkspacePage() {
               </section>
             </div>
           )}
+          {!isLoading && activeView === "preview" && <section className="builder-preview-terminal" aria-label="Build output terminal">
+            <div className="terminal-toggle-row">
+              <span>Build output</span>
+              <button type="button" onClick={() => setShowTerminal((visible) => !visible)} aria-expanded={showTerminal}>
+                {showTerminal ? "Hide terminal" : "Show terminal"}
+              </button>
+            </div>
+            {showTerminal && <BuildTerminal output={terminalOutput} status={terminalStatus} />}
+          </section>}
         </main>
       </div>
       <AnimatePresence>
