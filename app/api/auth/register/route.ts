@@ -24,12 +24,30 @@ function hasUniqueConstraintError(error: unknown): boolean {
   );
 }
 
+function getExpectedOrigin(request: Request): string {
+  const configuredAuthUrl = process.env.AUTH_URL?.trim();
+  if (configuredAuthUrl) {
+    try { return new URL(configuredAuthUrl).origin; } catch { /* Fall back to trusted proxy headers. */ }
+  }
+
+  // Render terminates TLS at its proxy, so request.url can contain the
+  // internal service URL (for example localhost:10000). Compare Origin with
+  // the public URL forwarded by the platform instead.
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0].trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();
+  if (forwardedHost && forwardedProto && ["http", "https"].includes(forwardedProto)) {
+    try { return new URL(`${forwardedProto}://${forwardedHost}`).origin; } catch { /* Use the request origin below. */ }
+  }
+
+  return new URL(request.url).origin;
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
   try {
     const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin) {
+    if (origin && origin !== getExpectedOrigin(request)) {
       return Response.json(
         { success: false, error: { code: "INVALID_ORIGIN", message: "Request origin is not allowed." }, requestId },
         { status: 403 },

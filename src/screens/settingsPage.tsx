@@ -13,13 +13,10 @@ import {
 import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp, projects } from "../components/shared";
 
 const settingsSections = [
-  ["/settings", User, "Profile"],
-  ["/settings/appearance", Eye, "Appearance"],
   ["/settings/usage", BarChart3, "Usage"],
   ["/settings/billing", CreditCard, "Billing"],
   ["/settings/api-keys", KeyRound, "API Keys"],
   ["/settings/integrations", Plug, "Integrations"],
-  ["/settings/danger", Trash2, "Danger zone"],
 ];
 
 export function SettingsPage() {

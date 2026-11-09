@@ -231,6 +231,9 @@ footer { padding: 54px 0; border-top: 1px solid var(--border); }
 .side-nav button, .settings-nav button { height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; color: var(--muted-foreground); border: 0; border-radius: 7px; background: transparent; white-space: nowrap; cursor: pointer; font-size: 12px; }
 .side-nav button:hover, .side-nav button.active, .settings-nav button:hover, .settings-nav button.active { color: var(--foreground); background: var(--muted); }
 .side-bottom { display: grid; gap: 12px; margin-top: auto; }
+.user-menu-wrap { position: relative; }
+.user-menu-signout { position: absolute; right: 0; bottom: calc(100% + 7px); z-index: 20; width: 100%; padding: 10px 12px; color: #ef4444; border: 1px solid var(--border); border-radius: 7px; background: var(--card); text-align: left; cursor: pointer; font: inherit; font-size: 11px; }
+.user-menu-signout:hover { background: color-mix(in srgb, #ef4444 9%, var(--card)); }
 .upgrade-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--muted); }
 .upgrade-card b { font-size: 11px; }
 .upgrade-card p { margin: 0; color: var(--muted-foreground); font-size: 9px; line-height: 1.5; }

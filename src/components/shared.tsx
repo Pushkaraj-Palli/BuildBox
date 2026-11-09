@@ -76,7 +76,6 @@ export const sidebarItems = [
   ["/dashboard/new", Plus, "New project"],
   ["/dashboard", FolderKanban, "Projects"],
   ["/templates", LayoutTemplate, "Templates"],
-  ["/settings/usage", BarChart3, "Usage"],
   ["/settings", Settings, "Settings"],
 ];
 
@@ -538,6 +537,15 @@ export function ProductShell({
   newProjectActive?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ name?: string | null; email?: string | null } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/session").then((response) => response.json()).then((session) => {
+      if (active) setCurrentUser(session?.user ?? null);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   return (
     <div className={`product-shell ${collapsed ? "is-collapsed" : ""}`}>
       <aside className="sidebar">
@@ -583,24 +591,14 @@ export function ProductShell({
           ))}
         </nav>
         <div className="side-bottom">
-          <div className="upgrade-card">
-            <Badge>FREE</Badge>
-            <b>Unlock more builds</b>
-            <p>Upgrade for unlimited projects and private sharing.</p>
-            <Button onClick={() => navigate("/pricing")}>Upgrade</Button>
+          <div className="user-menu-wrap">
+            <button className="user-menu" aria-label="Account menu" aria-expanded={isUserMenuOpen} onClick={() => setIsUserMenuOpen((open) => !open)}>
+              <span className="avatar">{(currentUser?.name || currentUser?.email || "U").slice(0, 1).toUpperCase()}</span>
+              <span>{currentUser?.name || currentUser?.email || "Account"}<small>{currentUser?.email || ""}</small></span>
+              <MoreHorizontal size={15} />
+            </button>
+            {isUserMenuOpen && <button className="user-menu-signout" onClick={() => void signOut({ redirectTo: "/login" })}>Sign out</button>}
           </div>
-          <button
-            className="user-menu"
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={() => void signOut({ redirectTo: "/login" })}
-          >
-            <span className="avatar">AM</span>
-            <span>
-              Avery Morgan<small>avery@acme.co</small>
-            </span>
-            <MoreHorizontal size={15} />
-          </button>
         </div>
       </aside>
       <div className="product-main">
