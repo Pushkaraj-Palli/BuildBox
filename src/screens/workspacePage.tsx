@@ -14,6 +14,7 @@ import {
 import { Badge, Button, Logo, ThemeToggle, AppHeader, routeToLogin, navigate, PromptBox, WorkspacePreview, SectionTitle, ProductShell, StatusBadge, examples, features, plans, faqs, fadeUp } from "../components/shared";
 import { CodeEditor } from "../components/CodeEditor";
 import { BuildTerminal } from "../components/BuildTerminal";
+import TheAnimation from "../components/TheAnimation";
 
 type WorkspaceProject = { id: string; name: string; description: string | null; framework: string | null };
 type WorkspaceFile = { id: string; path: string; content: string; language: string | null; version: number; updatedAt: string };
@@ -32,7 +33,8 @@ export function WorkspacePage() {
   const [draft, setDraft] = useState("");
   const [lastPrompt, setLastPrompt] = useState("");
   const [generation, setGeneration] = useState<GenerationInfo | null>(null);
-  const [generationLogs, setGenerationLogs] = useState<Array<{ id: string; stage: string; level: string; message: string }>>([]);
+  const [promptHistory, setPromptHistory] = useState<GenerationInfo[]>([]);
+  const [generationLogs, setGenerationLogs] = useState<Array<{ id: string; stage: string; level: string; message: string; metadata?: Record<string, unknown> | null }>>([]);
   const [activeView, setActiveView] = useState<"preview" | "code">("preview");
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -72,6 +74,22 @@ export function WorkspacePage() {
     previewError ? `\n[Preview error] ${previewError}` : "",
     error ? `\n[Error] ${error}` : "",
   ].filter(Boolean).join("\n").replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+  const latestLog = generationLogs.at(-1);
+  const batchProgress = latestLog?.metadata && typeof latestLog.metadata.completedBatches === "number" && typeof latestLog.metadata.totalBatches === "number"
+    ? latestLog.metadata.completedBatches / Math.max(1, latestLog.metadata.totalBatches)
+    : 0;
+  const generationProgress = latestLog?.stage === "generation"
+    ? latestLog.message.toLowerCase().includes("generating file batch")
+      ? 12 + batchProgress * 48
+      : latestLog.message.toLowerCase().includes("generated file batch")
+        ? 12 + batchProgress * 48
+        : 10
+    : latestLog?.stage === "planning" ? 6 : 3;
+  const validationProgress = validationResult?.status === "PASSED" ? 94 : 68;
+  const animationProgress = isGenerating ? generationProgress : isValidating ? validationProgress : isStartingPreview ? 97 : 3;
+  const animationStatus = isStartingPreview ? "Starting live preview…" : isValidating
+    ? validationResult?.status === "PASSED" ? "Build passed. Launching the preview…" : "Building and validating your project…"
+    : latestLog?.message || "Preparing your project…";
 
   useEffect(() => {
     const syncFullscreenState = () => setIsPreviewFullscreen(document.fullscreenElement === previewFrameRef.current);
@@ -106,6 +124,7 @@ export function WorkspacePage() {
     setProject(projectResult.data);
     setFiles(filesResult.data);
     const latestGeneration = generationsResult.data[0] ?? null;
+    setPromptHistory(generationsResult.data.filter((item: GenerationInfo) => item.prompt));
     setGeneration(latestGeneration);
     if (filesResult.data.length > 0) {
       const currentId = filesResult.data.some((file: WorkspaceFile) => file.id === selectedFileId)
@@ -186,7 +205,7 @@ export function WorkspacePage() {
         const statusResponse = await fetch(`/api/projects/${projectId}/generations/${generationId}`);
         const statusResult = await statusResponse.json();
         if (!statusResponse.ok) throw new Error(statusResult.error?.message || "Could not check generation status.");
-        const latest = statusResult.data as GenerationInfo & { logs?: Array<{ id: string; stage: string; level: string; message: string }> };
+      const latest = statusResult.data as GenerationInfo & { logs?: Array<{ id: string; stage: string; level: string; message: string; metadata?: Record<string, unknown> | null }> };
         setGeneration(latest);
         setGenerationLogs(latest.logs ?? []);
         if (latest.status === "FAILED") throw new Error(latest.errorMessage || "Project generation failed.");
@@ -232,7 +251,7 @@ export function WorkspacePage() {
         const statusResponse = await fetch(`/api/projects/${projectId}/generations/${generationId}`);
         const statusResult = await statusResponse.json();
         if (!statusResponse.ok) throw new Error(statusResult.error?.message || "Could not check project update status.");
-        const latest = statusResult.data as GenerationInfo & { logs?: Array<{ id: string; stage: string; level: string; message: string }> };
+        const latest = statusResult.data as GenerationInfo & { logs?: Array<{ id: string; stage: string; level: string; message: string; metadata?: Record<string, unknown> | null }> };
         setGeneration(latest);
         setGenerationLogs(latest.logs ?? []);
         if (latest.status === "FAILED") throw new Error(latest.errorMessage || "Project update failed.");
@@ -384,7 +403,10 @@ export function WorkspacePage() {
       <div className="builder-layout">
         <aside className="builder-sidebar">
           <h2>Build with BuildBox</h2>
-          {lastPrompt && <div className="message user-message">{lastPrompt}</div>}
+          <div className="builder-conversation" aria-label="Project prompt history">
+            {promptHistory.slice().reverse().map((item) => <div className="message user-message" key={item.id}>{item.prompt}</div>)}
+            {lastPrompt && !promptHistory.some((item) => item.prompt === lastPrompt) && <div className="message user-message">{lastPrompt}</div>}
+          </div>
           {(isGenerating || isValidating || isStartingPreview) && <div className="builder-progress" role="status" aria-live="polite">
             <span className="pulse-dot" />
             <div><strong>{isGenerating ? generation?.status ?? "Generating" : isValidating ? "Checking project" : "Starting preview"}</strong><small>{generationLogs.at(-1)?.message || "BuildBox is preparing your application."}</small></div>
@@ -413,7 +435,9 @@ export function WorkspacePage() {
             {activeView === "code" && <div className="editor-actions"><span>{saveMessage || (hasUnsavedChanges ? "Unsaved changes" : selectedFile ? `v${selectedFile.version}` : "")}</span><Button variant="secondary" onClick={() => void saveSelectedFile()} disabled={!hasUnsavedChanges || isSaving}>{isSaving ? "Saving..." : "Save file"}</Button></div>}
           </div>
           {isLoading ? <div className="builder-empty"><span className="pulse-dot" /> Loading project…</div> : activeView === "preview" ? (
-            previewUrl ? <iframe ref={previewFrameRef} className="builder-live-preview" title={`${project?.name ?? "Project"} live preview`} src={previewUrl} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" /> : (
+            previewUrl ? <iframe ref={previewFrameRef} className="builder-live-preview" title={`${project?.name ?? "Project"} live preview`} src={previewUrl} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" /> : isGenerating || isValidating || isStartingPreview ? (
+              <TheAnimation stage={isGenerating ? 0 : isValidating ? 1 : 2} steps={["Generating your project", "Validating the build", "Starting live preview"]} progress={animationProgress} statusText={animationStatus} />
+            ) : (
               <div className="builder-empty"><Monitor size={28} /><h2>{isGenerating ? "Generating your app" : isValidating ? "Checking your app" : isStartingPreview ? "Starting live preview" : files.length ? "Preparing your preview" : "Your preview will appear here"}</h2><p>{previewError || (files.length ? "BuildBox validates the generated project and starts its preview automatically." : "Describe your idea in the panel to start generating project files.")}</p></div>
             )
           ) : (

@@ -103,18 +103,24 @@ export function Dashboard() {
     project.name.toLowerCase().includes(query.toLowerCase()),
   );
   const startProject = async (prompt: string) => {
+    const normalizedPrompt = prompt.trim();
+    if (!normalizedPrompt) return;
+    if (normalizedPrompt.length > 1000) {
+      setProjectsError("Please enter a shorter prompt (1000 characters max).");
+      return;
+    }
     setIsCreatingProject(true);
     setProjectsError("");
     try {
-      const name = prompt.trim().split(/\s+/).slice(0, 6).join(" ").replace(/[.,!?]+$/, "") || "Untitled project";
+      const name = normalizedPrompt.split(/\s+/).slice(0, 6).join(" ").replace(/[.,!?]+$/, "") || "Untitled project";
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.slice(0, 100), description: prompt }),
+        body: JSON.stringify({ name: name.slice(0, 100), description: normalizedPrompt }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error?.message || "Could not create project.");
-      sessionStorage.setItem("buildbox-prompt", prompt);
+      sessionStorage.setItem("buildbox-prompt", normalizedPrompt);
       navigate(`/workspace/${result.data.id}`);
     } catch (error) {
       setProjectsError(error instanceof Error ? error.message : "Could not create project.");
@@ -155,6 +161,7 @@ export function Dashboard() {
             </p>
             <div className="new-project-prompt">
               <PromptBox onSubmit={(prompt) => void startProject(prompt)} />
+              {projectsError && <p role="alert" className="error-message">{projectsError}</p>}
             </div>
           </div>
         </main>
